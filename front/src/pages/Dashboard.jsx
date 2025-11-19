@@ -113,6 +113,10 @@ export default function Dashboard() {
   // 감정 상세 모달
   const [emotionModalOpen, setEmotionModalOpen] = useState(false)
 
+  // 🔹 시작일 > 종료일인지 여부 (검증용)
+  const isInvalidRange =
+    startDate && endDate && startDate > endDate
+
   // 요약 숫자 계산
   const recordCount = metrics?.recordCount ?? demoMetrics.recordCount
   const positivePercent = metrics?.positivePercent ?? demoMetrics.positivePercent
@@ -267,6 +271,13 @@ export default function Dashboard() {
   function handleSearch(e) {
     e.preventDefault()
     if (!selectedStudentId) return
+
+    // 🔹 기간 검증: 시작일이 종료일보다 늦으면 막기
+    if (isInvalidRange) {
+      alert('시작일이 종료일보다 늦을 수 없습니다. 기간을 다시 선택해주세요.')
+      return
+    }
+
     fetchDashboardData({
       studentId: selectedStudentId,
       from: startDate || undefined,
@@ -379,6 +390,7 @@ export default function Dashboard() {
                     <input
                       type="date"
                       value={startDate}
+                      max={endDate || undefined} // 🔹 종료일보다 늦게 선택 못 하도록 제한
                       onChange={e => setStartDate(e.target.value)}
                     />
                   </div>
@@ -387,10 +399,21 @@ export default function Dashboard() {
                     <input
                       type="date"
                       value={endDate}
+                      min={startDate || undefined} // 🔹 시작일보다 빠르게 선택 못 하도록 제한
                       onChange={e => setEndDate(e.target.value)}
                     />
                   </div>
                 </div>
+
+                {/* 기간 오류 표시 */}
+                {isInvalidRange && (
+                  <div
+                    className="muted"
+                    style={{ fontSize: 12, color: '#EF4444', marginTop: 4 }}
+                  >
+                    시작일이 종료일보다 늦을 수 없습니다. 날짜를 다시 선택해 주세요.
+                  </div>
+                )}
 
                 <div className="calendar-actions">
                   <button type="submit" className="btn">
