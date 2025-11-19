@@ -1,0 +1,2199 @@
+/* ───────── 0. 레이아웃 기본 설정 ───────── */
+
+:root {
+  --bg: #f4f5f7;
+  --card: #ffffff;
+  --muted: #6b7280;
+  --accent: #4f46e5;
+}
+
+/* 앱 전체 래퍼 (Layout.jsx에서 .app-root 사용) */
+.app-root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 기본 설정 */
+body {
+  margin: 0;
+  font-family: Inter, Roboto, Arial, sans-serif;
+  background: var(--bg);
+  color: #0f172a;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font-family: inherit;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background-color: #1a1a1a;
+  color: #ffffff;
+  cursor: pointer;
+  transition: border-color 0.25s, background-color 0.25s;
+}
+
+button:hover {
+  border-color: #646cff;
+}
+
+button:focus,
+button:focus-visible {
+  outline: 4px auto -webkit-focus-ring-color;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color: #213547;
+    background-color: #ffffff;
+  }
+  a:hover {
+    color: #747bff;
+  }
+  button {
+    background-color: #f9f9f9;
+    color: #111827;
+  }
+}
+
+/* ───────── 1. 공통 유틸리티 ───────── */
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.card-title {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.card-value {
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.btn {
+  background: var(--accent);
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+}
+
+.btn.secondary {
+  background: #eef2ff;
+  color: var(--accent);
+  border: 1px solid #dbeafe;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.error {
+  color: #b91c1c;
+}
+
+.search-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.search-row input {
+  flex: 1;
+  padding: 8px;
+  border: 1px solid #e6eef8;
+  border-radius: 8px;
+}
+
+/* ───────── 2. 업로더 & Progress 공통 ───────── */
+
+.uploader {
+  border: 2px dashed #dbeafe;
+  padding: 18px;
+  border-radius: 10px;
+  text-align: center;
+  cursor: pointer;
+}
+
+.upload-list .item {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+/* 공통 progress bar 기본 형태 */
+.progress {
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: #e5e7eb;
+  overflow: hidden;
+}
+
+.progress > i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+}
+
+/* ───────── 3. 텍스트 / 리포트 / 학생 카드 ───────── */
+
+.text-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.report {
+  padding: 18px;
+  background: linear-gradient(180deg, #fff, #fbfdff);
+  border-radius: 8px;
+}
+
+.student-card {
+  padding: 12px;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #fff, #fbfdff);
+  border: 1px solid #eef6ff;
+}
+
+/* ───────── 4. Auth / Login ───────── */
+
+.auth-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 16px;
+  background: var(--bg);
+}
+
+.auth-card {
+  width: 440px;
+  max-width: 100%;
+  background: var(--card);
+  border-radius: 16px;
+  padding: 28px 28px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+  text-align: left;
+}
+
+.auth-card .brand {
+  text-align: center;
+  margin-bottom: 8px;
+}
+
+.auth-card h2 {
+  margin: 0;
+  font-size: 18px;
+  text-align: center;
+}
+
+.auth-card .subtitle {
+  font-size: 13px;
+  color: var(--muted);
+  text-align: center;
+  margin-bottom: 18px;
+}
+
+.auth-form {
+  display: block;
+}
+
+.auth-form label {
+  display: block;
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.auth-form input,
+.auth-form select {
+  width: 92%;
+  padding: 16px 18px;
+  border-radius: 12px;
+  border: 0;
+  background: #f3f5f7;
+  margin-bottom: 12px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+.auth-form input::placeholder {
+  color: #c9cbd0;
+}
+
+.auth-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.auth-actions .btn {
+  flex: 1;
+  padding: 12px 14px;
+  border: none;
+  cursor: pointer;
+  border-radius: 12px;
+  background: #6b6b76;
+  color: #fff;
+}
+
+.auth-actions .btn.secondary {
+  background: #fff;
+  color: #111;
+  border: 1px solid #e6e6e6;
+  border-radius: 12px;
+}
+
+.auth-actions .btn:disabled {
+  opacity: 0.7;
+}
+
+/* ───────── 5. Signup Modal ───────── */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 60;
+}
+
+.modal-card {
+  width: 800px;
+  height : 600px;
+  max-width: 92%;
+  background: #ffffff;
+  border-radius: 18px;
+  padding: 28px 32px 24px;
+  box-shadow: 0 22px 45px rgba(15, 23, 42, 0.35);
+  position: relative;
+}
+
+.modal-card h3 {
+  margin: 0 0 4px 0;
+  font-size: 20px;
+  font-weight: 600;
+  padding: 24px 32px;
+}
+
+.modal-card .muted {
+  font-size: 13px;
+  margin-bottom: 20px;
+}
+
+.modal-close {
+  position: absolute;
+  right: 24px;
+  top: 22px;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  width: auto;
+  height: auto;
+  font-size: 18px;
+  color: #6b7280;
+  cursor: pointer;
+}
+
+.modal-form label {
+  display: block;
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.modal-form input {
+  width: 96%;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 0;
+  background: #f3f5f7;
+  margin-bottom: 10px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  font-size: 14px;
+}
+
+.modal-form input::placeholder {
+  color: #c9cbd0;
+}
+
+/* 유형 라디오 정렬 */
+.radio-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+  margin: 6px 0 2px 0;
+}
+
+.radio-row > label {
+  font-size: 14px;
+}
+
+/* 모달 하단 버튼 */
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.modal-actions .btn {
+  padding: 10px 20px;
+  border-radius: 999px;
+  font-size: 14px;
+}
+
+.modal-actions .btn.secondary {
+  background: #ffffff;
+  color: #111827;
+  border: 1px solid #e5e7eb;
+}
+
+.modal-actions .btn:not(.secondary) {
+  background: #020617;
+  color: #ffffff;
+  border: none;
+}
+
+@media (max-width: 560px) {
+  .modal-card {
+    width: 92%;
+    padding: 20px 18px 18px;
+  }
+}
+
+/* 역할 선택 토글 버튼 */
+.role-toggle {
+  display: flex;
+  gap: 8px;
+  margin: 6px 0 14px 0;
+}
+
+.role-btn {
+  flex: 1;
+  padding: 9px 0;
+  border-radius: 999px;
+  border: 1px solid #e5e7eb;
+  background: #f9fafb;
+  color: #4b5563;
+  font-size: 14px;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.role-btn.active {
+  background: #020617;
+  color: #ffffff;
+  border-color: #020617;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.25);
+}
+
+.role-btn:not(.active):hover {
+  background: #eef2ff;
+  border-color: #c7d2fe;
+}
+
+/* ==== 업로드 상세보기 모달 확장 ==== */
+
+.modal-card.modal-card-wide {
+  width: 1120px;
+  height : 1050px;
+  max-width: 96%;
+  padding: 32px 36px 30px;
+}
+
+/* 헤더: 제목 + 버튼 정렬 */
+.detail-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 6px;
+}
+
+.detail-header-row h3 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.detail-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 파일 이름 한 줄 텍스트 */
+.detail-file-name {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* 모달 내부 2열 레이아웃 */
+.detail-layout {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: minmax(0, 2.1fr) minmax(0, 1.5fr);
+  gap: 24px;
+  align-items: flex-start;
+}
+
+.detail-left h4,
+.detail-right h4 {
+  margin: 0 0 10px;
+  font-size: 14px;
+}
+
+/* 왼쪽 텍스트 영역 */
+.detail-text-box {
+  background: #f9fafb;
+  border-radius: 14px;
+  min-height: 260px;
+  width : 200px;
+  padding: 18px 20px;
+  font-size: 14px;
+  color: #111827;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-y: auto;
+}
+
+/* 수정 모드 textarea */
+.detail-textarea {
+  width: 100%;
+  min-height: 260px;
+  padding: 16px 18px;
+  border-radius: 14px;
+  border: 1px solid #e5e7eb;
+  background: #f9fafb;
+  resize: vertical;
+  font-size: 14px;
+  line-height: 1.5;
+  font-family: inherit;
+}
+
+/* 오른쪽 카드 공통 */
+.analysis-card {
+  background: #f9fafb;
+  border-radius: 18px;
+  padding: 16px 18px 14px;
+  margin-bottom: 12px;
+}
+
+.activity-info-card {
+  background: #eff6ff;
+}
+
+.performance-card {
+  background: #fffbeb;
+}
+
+/* 카드 타이틀 / 보조 텍스트 */
+.analysis-card h5 {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.analysis-card .label {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+/* 수행 수준 / 점수 한 줄 */
+.performance-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+
+.performance-item {
+  font-size: 13px;
+}
+
+.performance-item strong {
+  display: block;
+  font-size: 13px;
+}
+
+/* 주요 능력 / 감정 칩 리스트 */
+.ability-chips-row,
+.emotion-chips-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0 10px;
+}
+
+/* 활동 수행 & 능력 분석 아래 패딩 */
+.performance-comment-block {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed #facc15;
+  font-size: 13px;
+}
+
+/* 능력/감정 칩 모양 */
+.skill-chip,
+.emotion-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+.skill-chip {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+/* 감정 칩은 살짝 다른 색 */
+.emotion-chip {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+/* 감정 영역 카드 */
+.emotion-card {
+  background: #f9fafb;
+  border-radius: 18px;
+  padding: 14px 18px 12px;
+  margin-bottom: 10px;
+}
+
+/* 반응형: 폭이 줄어들면 세로 배치 */
+@media (max-width: 1024px) {
+  .modal-card.modal-card-wide {
+    width: 96%;
+    padding: 24px 20px 20px;
+  }
+
+  .detail-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ───────── 6. 상단 공통 네비게이션 ───────── */
+
+.top-nav {
+  height: 64px;
+  padding: 0 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #f1f5f9;
+  background: #ffffff;
+  position: sticky;
+  top: 0;
+  z-index: 40;
+}
+
+.top-nav-left .brand {
+  font-size: 18px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.top-nav-center {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+
+.nav-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 18px;
+  font-size: 14px;
+  border-radius: 999px;
+  border: none;
+  background: transparent;
+  color: #0f172a;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease,
+    transform 0.1s ease;
+}
+
+.nav-tab-icon {
+  font-size: 15px;
+}
+
+.nav-tab:not(.active) {
+  background: #f3f4f6;
+  color: #0f172a;
+}
+
+.nav-tab:hover {
+  transform: translateY(-1px);
+  background: #e5e7eb;
+}
+
+.nav-tab.active {
+  background: #020617;
+  color: #ffffff;
+}
+
+.top-nav-right .avatar-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+}
+
+.top-nav-right .avatar-btn:hover {
+  background: #f3f4f6;
+}
+
+/* ───────── 7. 업로드 처리 현황 영역 ───────── */
+
+.upload-status-section {
+  margin-top: 32px;
+  padding: 24px;
+  border-radius: 18px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+}
+
+.section-header h2 {
+  margin: 0 0 4px;
+  font-size: 18px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.section-header .muted {
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.upload-list {
+  margin-top: 16px;
+}
+
+/* 공통 업로드 카드 */
+.upload-card {
+  position: relative;
+  padding: 16px 20px;
+  border-radius: 18px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* 상태별 배경 / 테두리 색 */
+.upload-card-success {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.upload-card-processing {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
+.upload-card-failed {
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+/* 상단 정보 줄 */
+.upload-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.upload-card-main {
+  flex: 1;
+}
+
+.upload-card-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: #111827;
+  margin-bottom: 4px;
+}
+
+.status-icon {
+  font-size: 18px;
+}
+
+/* 메타 정보 (학생, 업로드일 등) */
+.upload-card-meta {
+  font-size: 13px;
+  color: #6b7280;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.meta-sep {
+  color: #d1d5db;
+}
+
+/* 전체 진행률 */
+.upload-card-progress-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  margin-top: 6px;
+  margin-bottom: 6px;
+}
+
+/* 단계별 진행률 영역 */
+.upload-card-steps {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed #e5e7eb;
+}
+
+.step-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 6px;
+}
+
+.step-label {
+  min-width: 88px;
+  font-size: 13px;
+  color: #4b5563;
+}
+
+.step-progress-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.step-progress {
+  flex: 1;
+}
+
+.step-progress > i {
+  background: #22c55e;
+}
+
+.step-percent {
+  font-size: 12px;
+  color: #4b5563;
+}
+
+/* 카드 오른쪽 액션 영역 */
+.upload-card-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  min-width: 120px;
+}
+
+.upload-card-actions .btn.secondary {
+  padding: 6px 14px;
+  font-size: 13px;
+  border-radius: 999px;
+}
+
+/* 상태 pill */
+.status-pill {
+  font-size: 12px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: none;
+}
+
+/* 상태별 progress 색상 */
+/* 전체 진행률 바 */
+.upload-card-success .overall-progress {
+  background: #dcfce7;
+}
+.upload-card-success .overall-progress > i {
+  background: #16a34a;
+}
+
+.upload-card-processing .overall-progress {
+  background: #dbeafe;
+}
+.upload-card-processing .overall-progress > i {
+  background: #2563eb;
+}
+
+.upload-card-failed .overall-progress {
+  background: #fee2e2;
+}
+.upload-card-failed .overall-progress > i {
+  background: #dc2626;
+}
+
+/* 단계별 progress 바 */
+.upload-card-success .step-progress {
+  background: #dcfce7;
+}
+.upload-card-success .step-progress > i {
+  background: #16a34a;
+}
+
+.upload-card-processing .step-progress {
+  background: #dbeafe;
+}
+.upload-card-processing .step-progress > i {
+  background: #2563eb;
+}
+
+.upload-card-failed .step-progress {
+  background: #fee2e2;
+}
+.upload-card-failed .step-progress > i {
+  background: #dc2626;
+}
+
+/* ───────── 8. Dashboard 학생 카드 ───────── */
+
+.dashboard-page {
+  padding: 24px 16px 40px;
+  display: flex;
+  justify-content: center;
+  flex: 1; /* footer를 아래로 밀기 위해 */
+}
+
+.dashboard-inner {
+  width: 100%;
+  max-width: 1180px;
+}
+
+.student-summary-top {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.student-avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 999px;
+  background: #2563eb;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 22px;
+}
+
+.student-header-right {
+  flex: 1;
+}
+
+.student-select-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 학생 선택 드롭다운 (폭 1/2, 텍스트 오른쪽, 화살표 조금 안쪽) */
+.student-select {
+  flex: 0 0 50%;
+  max-width: 50%;
+  border-radius: 999px;
+  border: 1px solid #e5e7eb;
+
+  padding: 10px 40px 10px 24px; /* 텍스트 오른쪽으로, 오른쪽은 화살표 여백 */
+  font-size: 14px;
+  background-color: #f9fafb;
+
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+
+  background-image:
+    linear-gradient(45deg, transparent 50%, #6b7280 50%),
+    linear-gradient(135deg, #6b7280 50%, transparent 50%);
+  background-position:
+    calc(85% - 4px) 50%,
+    85% 50%;
+  background-size: 6px 6px;
+  background-repeat: no-repeat;
+}
+
+.student-more-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.student-tagline {
+  margin-top: 6px;
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.student-divider {
+  margin-top: 12px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.student-metrics-row {
+  display: flex;
+  justify-content: space-around;
+  text-align: center;
+  margin-top: 17px; /* 기존보다 5px 더 띄움 */
+}
+
+.student-metric {
+  flex: 1;
+}
+
+.metric-number {
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.metric-blue {
+  color: #2563eb;
+}
+
+.metric-green {
+  color: #16a34a;
+}
+
+.metric-purple {
+  color: #a855f7;
+}
+
+.metric-label {
+  margin-top: 2px;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+/* ───────── 9. Dashboard 공통 카드 & 레이아웃 ───────── */
+
+.dashboard-filter-card,
+.dashboard-card,
+.dashboard-card.wide-card {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+
+  margin: 0 0 16px;
+  padding: 24px;
+  border-radius: 18px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+}
+
+/* 상단 필터 카드 2열 레이아웃 (학생 / 캘린더) */
+.dashboard-filter-grid {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr;
+  gap: 24px;
+}
+
+.filter-student-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.filter-calendar-panel {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+/* 캘린더 내부 */
+.calendar-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* 기간 선택 타이틀만 굵게 */
+.filter-calendar-panel .card-title {
+  font-weight: 600;
+}
+
+.calendar-icon {
+  font-size: 22px;
+}
+
+.calendar-fields {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.calendar-field {
+  flex: 1;
+}
+
+.calendar-field label {
+  display: block;
+  font-size: 12px;
+  color: #6b7280;
+  margin-bottom: 4px;
+}
+
+/* 시작일/종료일 인풋 크기 축소 */
+.calendar-field input[type='date'] {
+  width: 50%;
+  padding: 4px 8px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  font-size: 12px;
+  background: #f9fafb;
+}
+
+.calendar-actions {
+  margin-top: 16px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* 활동 그래프 wrapper: 카드 중앙 정렬 */
+.activity-chart-wrapper {
+  margin-top: 16px;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+/* 아래 메인 카드 영역 (감정 분포 / 활동 그래프 등) */
+.dashboard-main {
+  margin-top: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.wide-card {
+  width: 100%;
+}
+
+/* ───────── 10. 감정 분포 카드 ───────── */
+
+.emotion-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.emotion-detail-btn {
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 12px;
+}
+
+.emotion-chart-row {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: 1.1fr 2fr;
+  align-items: center;
+  gap: 8px;
+}
+
+.emotion-main-label {
+  font-size: 16px;
+  font-weight: 600;
+  color: #10b981;
+}
+
+.emotion-chart {
+  height: 260px;
+}
+
+.emotion-legend {
+  margin-top: 16px;
+  display: flex;
+  justify-content: center;
+  gap: 24px;
+  font-size: 13px;
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  display: inline-block;
+}
+
+.legend-positive {
+  background: #10b981;
+}
+
+.legend-negative {
+  background: #ef4444;
+}
+
+.legend-neutral {
+  background: #f59e0b;
+}
+
+/* 감정 분포 상세 모달 */
+
+.modal-card.emotion-detail-modal {
+  width: 720px;
+  max-width: 96%;
+  height: auto;
+  max-height: 80vh;
+  padding: 24px 28px 22px;
+  background: #f9fbff;
+  border-radius: 18px;
+  border: 1px solid #bfdbfe;
+  box-shadow: 0 22px 45px rgba(15, 23, 42, 0.25);
+}
+
+.emotion-detail-modal h3 {
+  margin: 0 0 4px;
+  padding: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.emotion-detail-modal .muted {
+  font-size: 13px;
+  margin-bottom: 10px;
+}
+
+/* 표 영역 카드 */
+.emotion-detail-table-card {
+  margin-top: 10px;
+  padding: 14px 18px 10px;
+  border-radius: 16px;
+  background: #eff6ff;
+  border: 1px solid #c7d2fe;
+}
+
+/* 표 자체 */
+.emotion-detail-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.emotion-detail-table thead th {
+  text-align: left;
+  padding: 6px 4px 8px;
+  color: #4b5563;
+  border-bottom: 1px solid #dbeafe;
+}
+
+.emotion-detail-table tbody td {
+  padding: 6px 4px;
+  border-bottom: 1px solid #e5edff;
+}
+
+.emotion-detail-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.emotion-detail-type {
+  width: 18%;
+  font-weight: 600;
+}
+
+.emotion-detail-ratio,
+.emotion-detail-count {
+  width: 15%;
+}
+
+.emotion-detail-desc {
+  color: #4b5563;
+}
+
+/* 분석 요약 박스 */
+.emotion-detail-summary-card {
+  margin-top: 14px;
+  padding: 12px 16px 10px;
+  border-radius: 16px;
+  background: #e0f2fe;
+  border: 1px solid #bae6fd;
+  font-size: 13px;
+  color: #111827;
+}
+
+.emotion-detail-summary-title {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.emotion-detail-summary-text {
+  line-height: 1.6;
+}
+
+/* 반응형 */
+@media (max-width: 640px) {
+  .modal-card.emotion-detail-modal {
+    width: 100%;
+    max-height: 88vh;
+    padding: 20px 18px;
+  }
+
+  .emotion-detail-table-card {
+    padding: 12px 12px 8px;
+  }
+
+  .emotion-detail-summary-card {
+    padding: 10px 12px 8px;
+  }
+}
+
+/* ───────── 11. 활동별 능력 분석 하단 요약 카드 ───────── */
+
+.ability-summary-grid {
+  margin-top: 24px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+/* 공통 카드 스타일 */
+.ability-summary-card {
+  border-radius: 18px;
+  padding: 18px 20px;
+  background: #f9fafb;
+  box-shadow: 0 0 0 1px #e5e7eb;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 110px;
+}
+
+.summary-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #4b5563;
+  margin-bottom: 8px;
+}
+
+.summary-main {
+  font-size: 26px;
+  font-weight: 700;
+  color: #111827;
+  margin-bottom: 6px;
+}
+
+.summary-sub {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+/* 카드별 색감 */
+.summary-excellent {
+  background: #ecfdf5;
+  box-shadow: 0 0 0 1px #a7f3d0;
+}
+
+.summary-good {
+  background: #eff6ff;
+  box-shadow: 0 0 0 1px #bfdbfe;
+}
+
+.summary-challenge {
+  background: #fff7ed;
+  box-shadow: 0 0 0 1px #fed7aa;
+}
+
+.summary-average {
+  background: #fefce8;
+  box-shadow: 0 0 0 1px #facc15;
+}
+
+/* ───────── 12. 활동별 능력 분석 테이블 ───────── */
+
+.activity-ability-table {
+  margin-top: 12px;
+}
+
+/* 헤더 줄 */
+.ability-table-header {
+  display: grid;
+  grid-template-columns: 1.8fr 1.1fr 3.2fr 1.2fr 1.6fr;
+  gap: 16px;
+  font-size: 13px;
+  color: #6b7280;
+  padding: 6px 4px 10px 0;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+/* 데이터 한 줄 */
+.ability-table-row {
+  display: grid;
+  grid-template-columns: 1.8fr 1.1fr 3.2fr 1.2fr 1.6fr;
+  gap: 16px;
+  align-items: center;
+  font-size: 13px;
+  padding: 10px 4px;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+/* 활동 컬럼 */
+.col-activity {
+  min-width: 0;
+}
+
+.activity-name {
+  font-weight: 500;
+  color: #111827;
+}
+
+.activity-date {
+  font-size: 12px;
+}
+
+/* 수행 수준 뱃지 */
+.col-level {
+  display: flex;
+  align-items: center;
+}
+
+.level-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* 수준별 색 */
+.level-excellent {
+  background: #ecfdf5;
+  color: #15803d;
+}
+
+.level-good {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.level-challenge {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+/* 능력 분포 막대 */
+.col-distribution {
+  min-width: 0;
+}
+
+.ability-bar {
+  width: 100%;
+  height: 14px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: #fee2e2;
+  display: flex;
+}
+
+.bar-seg {
+  display: block;
+  height: 100%;
+}
+
+.bar-hard {
+  background: #fb7185; /* 빨강 */
+}
+
+.bar-normal {
+  background: #f97316; /* 주황 */
+}
+
+.bar-good {
+  background: #10b981; /* 초록 */
+}
+
+.ability-bar-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  font-size: 11px;
+  color: #6b7280;
+}
+
+/* 종합 점수 */
+.col-score {
+  text-align: right;
+}
+
+.score-main {
+  font-size: 16px;
+  font-weight: 600;
+  color: #111827;
+}
+
+/* 주요 능력 칩 */
+.col-main-skills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.skill-chip {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #f3f4ff;
+  color: #4f46e5;
+  font-size: 12px;
+}
+
+/* ───────── 13. 리포트 센터 페이지 ───────── */
+
+.report-page {
+  padding-top: 16px;
+}
+
+.report-header h1 {
+  margin: 0 0 4px;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.report-header .muted {
+  font-size: 13px;
+}
+
+/* 필터 카드 전체 박스 */
+.report-filter-card {
+  margin-top: 16px;
+  padding: 20px 24px 18px;
+  border-radius: 18px;
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+}
+
+/* 필터 상단 제목 줄 */
+.report-filter-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.filter-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  background: #eef2ff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+}
+
+/* 날짜 필터 방식 */
+.report-filter-block {
+  margin-bottom: 12px;
+}
+
+.filter-label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.filter-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #111827;
+}
+
+.filter-mode-text {
+  font-size: 12px;
+}
+
+/* 날짜 범위 / 특정 날짜 토글 */
+.filter-radio-row {
+  display: inline-flex;
+  gap: 6px;
+  background: #f3f4f6;
+  padding: 4px;
+  border-radius: 999px;
+}
+
+.filter-toggle {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  color: #4b5563;
+  cursor: pointer;
+}
+
+.filter-toggle.active {
+  background: #ffffff;
+  color: #111827;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.12);
+}
+
+/* 필터 입력 영역 */
+.report-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.filter-field label {
+  display: block;
+  font-size: 12px;
+  color: #6b7280;
+  margin-bottom: 4px;
+}
+
+.filter-field input[type='date'],
+.report-select {
+  width: 50%;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid #e5e7eb;
+  font-size: 13px;
+  background: #f9fafb;
+}
+
+/* 필터 하단 */
+.report-filter-footer {
+  margin-top: 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.report-filter-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.report-reset-btn {
+  font-size: 13px;
+  padding: 6px 12px;
+}
+
+/* 리포트 카드 리스트 그리드 */
+.report-list-grid {
+  margin-top: 18px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px;
+}
+
+/* 개별 리포트 카드 */
+.report-card {
+  background: #ffffff;
+  border-radius: 16px;
+  border: 1px solid #e5e7eb;
+  padding: 14px 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.report-card-header {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.report-card-icon-wrap {
+  padding-top: 4px;
+}
+
+.report-card-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  background: #eef2ff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  color: #4f46e5;
+}
+
+.report-card-title-block {
+  min-width: 0;
+}
+
+.report-card-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.report-card-meta {
+  font-size: 12px;
+  color: #6b7280;
+  line-height: 1.5;
+}
+
+/* 상태 뱃지 */
+.report-card-status {
+  display: flex;
+  align-items: flex-start;
+}
+
+.report-status-badge {
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid #e5e7eb;
+  background: #f9fafb;
+  color: #4b5563;
+}
+
+.report-status-badge.success {
+  background: #ecfdf5;
+  border-color: #bbf7d0;
+  color: #15803d;
+}
+
+.report-status-badge.running {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+}
+
+.report-status-badge.queued {
+  background: #fefce8;
+  border-color: #fde68a;
+  color: #92400e;
+}
+
+.report-status-badge.failed {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #b91c1c;
+}
+
+/* 카드 하단 */
+.report-card-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.report-created-at {
+  font-size: 11px;
+}
+
+.report-card-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.report-btn {
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 13px;
+}
+
+.report-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ───────── 14. 반응형 ───────── */
+
+@media (max-width: 1024px) {
+  .dashboard-filter-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ability-table-header,
+  .ability-table-row {
+    grid-template-columns: 1.6fr 1fr 2.6fr 1.1fr 1.7fr;
+  }
+
+  .report-filter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 960px) {
+  .report-filter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .ability-table-header,
+  .ability-table-row {
+    grid-template-columns: 1.6fr 0.9fr 2.4fr;
+  }
+
+  .ability-table-row {
+    grid-auto-flow: row;
+    grid-row-gap: 6px;
+  }
+}
+
+@media (max-width: 640px) {
+  .ability-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .report-filter-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .report-filter-footer {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+}
+
+/* ───────── 15. 푸터 ───────── */
+
+.app-footer {
+  padding: 0 12px 12px;
+  font-size: 12px;
+  color: #9ca3af;
+  text-align: center;
+}
+
+/* ───────── 16. 업로드 상세 모달 레이아웃 ───────── */
+
+.modal-card-wide {
+  width: 96vw;
+  max-width: 1280px;
+  max-height: 92vh;
+  padding: 32px 40px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* 모달 상단 헤더 */
+.detail-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.detail-header-row h3 {
+  margin: 0;
+  padding: 0; /* .modal-card h3 기본 padding 제거 */
+  font-size: 18px;
+  font-weight: 600;
+}
+
+/* 헤더 오른쪽 버튼 영역 */
+.detail-header-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding-right: 20px;
+}
+
+/* wide 모달 본문 레이아웃 */
+.detail-layout {
+  margin-top: 16px;
+  display: flex;
+  gap: 24px;
+  flex: 1;
+  min-height: 420px;
+}
+
+/* 왼쪽: 추출 텍스트 영역을 더 넓게 */
+.detail-left {
+  flex: 2.1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.detail-left h4 {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* 오른쪽: 분석 카드 영역(텍스트보다 좁게) */
+.detail-right {
+  flex: 1.2;
+  min-width: 320px;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.detail-right h4 {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* ===== 텍스트 입력 / 보기 박스 ===== */
+
+.detail-textarea {
+  width: 90%;
+  height: 360px;
+  min-height: 360px;
+  resize: vertical;
+  border-radius: 18px;
+  border: 1px solid #e5e7eb;
+  background: #f7f8fb;
+  padding: 14px 16px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #111827;
+  outline: none;
+  font-family: inherit;
+}
+
+.detail-textarea:focus {
+  border-color: #111827;
+  box-shadow: 0 0 0 1px #11182712;
+  background: #ffffff;
+}
+
+.detail-text-box {
+  width: 90%;
+  min-height: 360px;
+  border-radius: 18px;
+  border: 1px solid #f3f4f6;
+  background: #f7f8fb;
+  padding: 14px 16px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #111827;
+  white-space: pre-wrap;
+}
+
+/* ===== 우측 카드 공통 스타일 ===== */
+
+.analysis-card {
+  background: #f9fafb;
+  border-radius: 18px;
+  border: 1px solid #edf0f4;
+  padding: 12px 16px 14px;
+  font-size: 13px;
+}
+
+.analysis-card h5 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* 활동 정보 카드 색상 */
+.activity-info-card {
+  background: #f3f7ff;
+  border-color: #e3ecff;
+}
+
+/* 수행/능력 카드 색상 */
+.performance-card {
+  background: #fffaf0;
+  border-color: #ffedd5;
+}
+
+/* ===== 활동 정보 그리드 ===== */
+
+.activity-info-grid {
+  display: grid;
+  grid-template-columns: 1.1fr 1.1fr;
+  gap: 8px 16px;
+}
+
+.activity-info-grid dt {
+  font-size: 11px;
+  color: #6b7280;
+  margin-bottom: 2px;
+}
+
+.activity-info-grid dd {
+  margin: 0;
+  font-size: 13px;
+  color: #111827;
+}
+
+/* ===== 인풋 / 텍스트에어리어 공통 ===== */
+
+.analysis-input {
+  width: 60%;
+  border-radius: 14px;
+  border: 1px solid #e5e7eb;
+  background: #f7f8fb;
+  padding: 7px 10px;
+  font-size: 13px;
+  color: #111827;
+  outline: none;
+}
+
+.analysis-textarea {
+  width: 76%;
+  border-radius: 14px;
+  border: 1px solid #e5e7eb;
+  background: #f7f8fb;
+  padding: 7px 10px;
+  font-size: 13px;
+  color: #111827;
+  outline: none;
+}
+
+.analysis-input:focus,
+.analysis-textarea:focus {
+  border-color: #111827;
+  box-shadow: 0 0 0 1px #11182712;
+  background: #ffffff;
+}
+
+.analysis-textarea {
+  min-height: 60px;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+/* 수행 수준 / 점수 행 */
+.performance-row {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+
+.performance-item {
+  flex: 1;
+}
+
+.performance-item .label {
+  display: block;
+  font-size: 11px;
+  color: #6b7280;
+  margin-bottom: 3px;
+}
+
+.performance-item .value {
+  font-size: 13px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.performance-item .value.score {
+  color: #111827;
+}
+
+/* 능력 칩 / 입력 영역 */
+.ability-chips-row {
+  margin-top: 4px;
+}
+
+.ability-chips-row .label {
+  display: block;
+  font-size: 11px;
+  color: #6b7280;
+  margin-bottom: 4px;
+}
+
+.ability-chips-row .chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.skill-chip {
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+/* 점수/능력 설명 문장 */
+.performance-explain {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #4b5563;
+  line-height: 1.5;
+}
+
+/* 수정 버튼 active 상태 */
+.detail-header-actions .btn.secondary.active {
+  background: #e5e7eb;
+  color: #111827;
+}
+
+/* 반응형: 폭이 좁으면 세로 레이아웃 */
+@media (max-width: 900px) {
+  .modal-card-wide {
+    width: 100%;
+    max-width: 96%;
+    padding: 24px 18px;
+  }
+
+  .detail-layout {
+    flex-direction: column;
+  }
+
+  .detail-right {
+    min-width: 0;
+    max-width: none;
+  }
+
+  .detail-textarea,
+  .detail-text-box {
+    min-height: 260px;
+  }
+}
+
+/* ───────── 8. 프로필 드롭다운 & 프로필 설정 모달 ───────── */
+
+/* 우측 상단 드롭다운 메뉴 (사용자 / 프로필 / 로그아웃) */
+.profile-menu {
+  position: absolute;
+  top: 72px; /* 상단바(64px) 아래 살짝 띄우기 */
+  right: 48px;
+  width: 140px;
+  padding: 4px 0;
+  background: #ffffff;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.18);
+  z-index: 80;
+  font-size: 13px;
+}
+
+.profile-menu-item {
+  width: 100%;
+  text-align: left;
+  padding: 9px 16px;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+
+  /* ✅ 글자색을 확실하게 지정 */
+  color: #111827 !important;
+  line-height: 1.4;
+}
+
+.profile-menu-item + .profile-menu-item {
+  border-top: 1px solid #f1f5f9;
+}
+
+.profile-menu-item:hover {
+  background: #f9fafb;
+}
+
+/* 프로필 설정 모달 (스크린샷 사이즈에 맞춤) */
+.modal-card.profile-settings-modal {
+  width: 480px;
+  height: auto;
+  max-width: 92%;
+  max-height: 80vh;
+  padding: 24px 28px 22px;
+  overflow-y: auto;
+}
+
+.modal-card.profile-settings-modal h3 {
+  padding: 0;
+  margin: 0 0 6px 0;
+}
+
+.profile-settings-modal .muted {
+  margin-bottom: 12px;
+}
+
+.profile-settings-helper {
+  margin: 10px 0 4px;
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+/* 반응형 */
+@media (max-width: 768px) {
+  .profile-menu {
+    right: 16px;
+  }
+
+  .modal-card.profile-settings-modal {
+    width: 100%;
+    max-height: 88vh;
+  }
+}
+
+/* 소요 시간 시/분 입력 */
+.time-input-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.time-input-group .time-input {
+  width: 20%;
+  text-align: right;
+}
+
+.time-input-group .time-separator {
+  font-size: 13px;
+  color: #4b5563;
+}
+
