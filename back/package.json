@@ -2,9 +2,9 @@
   "name": "db_node",
   "version": "1.0.0",
   "description": "",
-  "main": "server.js",          // 엔트리 파일을 server.js로
+  "main": "server.js",          
   "scripts": {
-    "start": "node server.js"  // ⭐ Render가 이걸로 서버 실행
+    "start": "node server.js"  
   },
   "keywords": [],
   "author": "",
