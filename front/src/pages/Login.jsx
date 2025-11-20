@@ -298,14 +298,6 @@ export default function Login() {
             </div>
           )}
         </form>
-
-        <div
-          className="muted"
-          style={{ textAlign: 'center', marginTop: 12 }}
-        >
-          .env 에서 <code>VITE_DEMO_MODE=true</code> 로 설정하면<br />
-          백엔드 장애 시 데모 토큰으로 자동 로그인합니다.
-        </div>
       </div>
 
       {showSignup && <SignupModal onClose={() => setShowSignup(false)} />}

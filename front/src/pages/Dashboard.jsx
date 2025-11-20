@@ -497,6 +497,16 @@ export default function Dashboard() {
               선택한 기간 동안 학생이 기록한 활동 시간을 보여줍니다.
             </div>
 
+            <div className="activity-chart-actions">
+              <button
+                type="button"
+                className="btn secondary emotion-detail-btn"
+                onClick={() => setEmotionModalOpen(true)}
+              >
+                상세보기
+              </button>
+            </div>
+
             <div className="activity-chart-wrapper">
               <BarChart
                 width={720}

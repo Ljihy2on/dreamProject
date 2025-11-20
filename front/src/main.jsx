@@ -1,9 +1,9 @@
-// src/main.jsx
-import { StrictMode } from 'react'
+// src/main.jsx (HashRouter 버전)
+import React, { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import {
-  BrowserRouter,
+  HashRouter,
   Routes,
   Route,
   Navigate,
@@ -11,15 +11,15 @@ import {
 } from 'react-router-dom'
 
 import Login from './pages/Login.jsx'
+import Dashboard from './pages/Dashboard.jsx'
+import UploadPage from './pages/UploadPage.jsx'
+import Report from './pages/Report.jsx'
 import StudentList from './pages/StudentList.jsx'
 import StudentDetail from './pages/StudentDetail.jsx'
-import UploadPage from './pages/UploadPage.jsx'
 import TextViewer from './pages/TextViewer.jsx'
-import Dashboard from './pages/Dashboard.jsx'
-import ReportPreview from './pages/Report.jsx'
-import RequireAuth from './components/RequireAuth'
+import RequireAuth from './components/RequireAuth.jsx'
 
-// /students/:id → StudentDetail에 id props로 넘기는 래퍼
+// /students/:id → StudentDetail에 studentId props로 넘기는 래퍼
 function StudentDetailWrapper() {
   const { id } = useParams()
   return <StudentDetail studentId={id} />
@@ -33,43 +33,12 @@ function TextViewerWrapper() {
 
 function AppRouter() {
   return (
-    <BrowserRouter>
+    <HashRouter>
       <Routes>
-        {/* 로그인 페이지 */}
+        {/* 공개 라우트 */}
         <Route path="/login" element={<Login />} />
 
-        {/* 루트는 대시보드로 리다이렉트 */}
-        <Route path="/" element={<Navigate to="/login" replace />} />
-
-        {/* 인증 필요한 페이지들 */}
-        <Route
-          path="/dashboard"
-          element={
-            <RequireAuth>
-              <Dashboard />
-            </RequireAuth>
-          }
-        />
-
-        <Route
-          path="/students"
-          element={
-            <RequireAuth>
-              <StudentList />
-            </RequireAuth>
-          }
-        />
-
-        <Route
-          path="/students/:id"
-          element={
-            <RequireAuth>
-              <StudentDetailWrapper />
-            </RequireAuth>
-          }
-        />
-
-        {/* 업로드 페이지 (정식 경로) */}
+        {/* 보호 라우트(로그인 필요) */}
         <Route
           path="/upload"
           element={
@@ -78,13 +47,38 @@ function AppRouter() {
             </RequireAuth>
           }
         />
-
-        {/* ✅ 옛날에 잘못 쓴 '/UploadPage'로 들어오면 /upload 로 보내기 */}
         <Route
-          path="/UploadPage"
-          element={<Navigate to="/upload" replace />}
+          path="/dashboard"
+          element={
+            <RequireAuth>
+              <Dashboard />
+            </RequireAuth>
+          }
         />
-
+        <Route
+          path="/report"
+          element={
+            <RequireAuth>
+              <Report />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/students"
+          element={
+            <RequireAuth>
+              <StudentList />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/students/:id"
+          element={
+            <RequireAuth>
+              <StudentDetailWrapper />
+            </RequireAuth>
+          }
+        />
         <Route
           path="/text/:uploadId"
           element={
@@ -94,19 +88,13 @@ function AppRouter() {
           }
         />
 
-        <Route
-          path="/report"
-          element={
-            <RequireAuth>
-              <ReportPreview />
-            </RequireAuth>
-          }
-        />
+        {/* 루트 → 로그인 페이지로 리다이렉트 */}
+        <Route path="/" element={<Navigate to="/login" replace />} />
 
-        {/* ✅ 나머지 이상한 주소들은 전부 대시보드로 */}
+        {/* 나머지 이상한 주소들은 전부 로그인으로 */}
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
-    </BrowserRouter>
+    </HashRouter>
   )
 }
 

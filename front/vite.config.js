@@ -4,7 +4,20 @@ import react from '@vitejs/plugin-react'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+  esbuild: {
+    charset: 'utf8',
+  },
+  server: {
+    headers: {
+      'Content-Language': 'ko',
+    },
+  },
+  preview: {
+    headers: {
+      'Content-Language': 'ko',
+    },
+  },
   build: {
-    chunkSizeWarningLimit: 1500,  // 1.5MB까지 경고 안 뜨게
+    chunkSizeWarningLimit: 1500, // 1.5MB까지만 경고
   },
 })

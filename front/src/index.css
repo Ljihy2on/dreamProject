@@ -1,3 +1,9 @@
+﻿@charset "UTF-8";
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap');
+
+:root {
+  font-family: 'Noto Sans KR', 'Pretendard', 'Spoqa Han Sans Neo', 'Segoe UI', Arial, sans-serif;
+}
 /* ───────── 0. 레이아웃 기본 설정 ───────── */
 
 :root {
@@ -17,9 +23,11 @@
 /* 기본 설정 */
 body {
   margin: 0;
-  font-family: Inter, Roboto, Arial, sans-serif;
   background: var(--bg);
   color: #0f172a;
+  font-family: inherit;
+  font-weight: 400;
+  font-feature-settings: 'ss01' on, 'kern' on;
 }
 
 a {
@@ -456,6 +464,7 @@ button:focus-visible {
   grid-template-columns: minmax(0, 2.1fr) minmax(0, 1.5fr);
   gap: 24px;
   align-items: flex-start;
+  height: 600px;
 }
 
 .detail-left h4,
@@ -1840,7 +1849,7 @@ button:focus-visible {
 
 .detail-header-row h3 {
   margin: 0;
-  padding: 0; /* .modal-card h3 기본 padding 제거 */
+  padding: 0;
   font-size: 18px;
   font-weight: 600;
 }
@@ -1853,39 +1862,34 @@ button:focus-visible {
   padding-right: 20px;
 }
 
-/* wide 모달 본문 레이아웃 */
+/* wide 모달 본문 레이아웃 (좌:우 = 4:6) */
 .detail-layout {
   margin-top: 16px;
   display: flex;
   gap: 24px;
   flex: 1;
   min-height: 420px;
+  margin-bottom: 16px; /* 하단 버튼과 약간의 간격 */
 }
 
-/* 왼쪽: 추출 텍스트 영역을 더 넓게 */
+/* 왼쪽: 원본 텍스트 영역 (40%) */
 .detail-left {
-  flex: 2.1;
+  flex: 4;
   min-width: 0;
   display: flex;
   flex-direction: column;
 }
 
-.detail-left h4 {
-  margin: 0 0 8px;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-/* 오른쪽: 분석 카드 영역(텍스트보다 좁게) */
+/* 오른쪽: AI 분석 카드 영역 (60%) */
 .detail-right {
-  flex: 1.2;
-  min-width: 320px;
-  max-width: 420px;
+  flex: 6;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 
+.detail-left h4,
 .detail-right h4 {
   margin: 0 0 8px;
   font-size: 14px;
@@ -1894,10 +1898,12 @@ button:focus-visible {
 
 /* ===== 텍스트 입력 / 보기 박스 ===== */
 
+/* ===== 텍스트 입력 / 보기 박스 ===== */
+
 .detail-textarea {
-  width: 90%;
-  height: 360px;
-  min-height: 360px;
+  width: 100%;              /* 패널 가로 전체 사용 */
+  min-height: 260px;
+  max-height: 440px;        /* 너무 길어지지 않게 제한 */
   resize: vertical;
   border-radius: 18px;
   border: 1px solid #e5e7eb;
@@ -1917,8 +1923,8 @@ button:focus-visible {
 }
 
 .detail-text-box {
-  width: 90%;
-  min-height: 360px;
+  width: 100%;
+  min-height: 260px;
   border-radius: 18px;
   border: 1px solid #f3f4f6;
   background: #f7f8fb;
@@ -1928,6 +1934,7 @@ button:focus-visible {
   color: #111827;
   white-space: pre-wrap;
 }
+
 
 /* ===== 우측 카드 공통 스타일 ===== */
 
@@ -1980,7 +1987,7 @@ button:focus-visible {
 /* ===== 인풋 / 텍스트에어리어 공통 ===== */
 
 .analysis-input {
-  width: 60%;
+  width: 73%;
   border-radius: 14px;
   border: 1px solid #e5e7eb;
   background: #f7f8fb;
@@ -2109,8 +2116,8 @@ button:focus-visible {
 
 /* 우측 상단 드롭다운 메뉴 (사용자 / 프로필 / 로그아웃) */
 .profile-menu {
-  position: absolute;
-  top: 72px; /* 상단바(64px) 아래 살짝 띄우기 */
+  position: fixed;
+  top: 72px;       /* 상단바 바로 아래에 고정 */
   right: 48px;
   width: 140px;
   padding: 4px 0;
@@ -2249,4 +2256,692 @@ button:focus-visible {
 }
 .btn.danger-outline:hover {
   background: #fef2f2;
+}
+
+/* ---------- UploadPage modern cards & modal ---------- */
+
+.card-shell {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 18px;
+  padding: 18px 20px;
+  margin-bottom: 16px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+}
+
+.card-shell-md {
+  padding: 20px 22px;
+}
+
+.card-shell-success {
+  border-color: #bbf7d0;
+}
+
+.card-shell-error {
+  border-color: #fecaca;
+}
+
+.card-shell-processing {
+  border-color: #fde68a;
+}
+
+.card-title-main {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0 0 4px;
+  color: #0f172a;
+}
+
+.card-subtitle {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 0;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.badge-success {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.badge-warning {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.badge-error {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.btn.ghost {
+  background: transparent;
+  border: 1px dashed #d1d5db;
+  color: #374151;
+}
+
+.btn.ghost:hover {
+  background: #f9fafb;
+}
+
+.upload-card-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.upload-card-shell-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.upload-card-shell-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.upload-card-summary-row {
+  display: flex;
+  gap: 18px;
+  align-items: stretch;
+  flex-wrap: wrap;
+}
+
+.upload-card-summary {
+  flex: 1;
+  width: 100px;
+}
+
+.upload-card-progress-col {
+  width: 220px;
+}
+
+.upload-card-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 16px;
+  padding: 12px 0 4px;
+  border-top: 1px solid #f1f5f9;
+  padding-top: 20px;
+}
+
+.upload-card-footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.detail-analysis-modal {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+}
+
+.detail-analysis-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+.detail-analysis-meta {
+  margin: 4px 0 0;
+}
+
+.detail-panel {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 16px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.detail-panel-head h4 {
+  margin: 0;
+}
+
+.detail-helper-text {
+  font-size: 12px;
+  color: #94a3b8;
+  margin-top: 8px;
+}
+
+.detail-layout-modern {
+  gap: 20px;
+  grid-template-columns: minmax(0, 4fr) minmax(0, 6fr);
+}
+
+.analysis-panel {
+  background: #ffffff;
+  border-radius: 16px;
+  border: 1px solid #e2e8f0;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.analysis-panel-header h4 {
+  margin: 0;
+}
+
+.analysis-scroll-panel {
+  max-height: 520px;
+  overflow-y: auto;
+  padding-right: 6px;
+  margin: 16px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.analysis-section {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 14px 16px;
+  background: #fbfdff;
+}
+
+.analysis-section h5 {
+  margin: 0 0 10px;
+  font-size: 14px;
+}
+
+.analysis-section-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.section-helper {
+  font-size: 12px;
+  color: #94a3b8;
+  margin: 4px 0 0;
+}
+
+.analysis-grid {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 8px 16px;
+  align-items: center;
+}
+
+.analysis-grid.two-columns {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.analysis-input-static {
+  background: #f8fafc;
+  border-radius: 10px;
+  padding: 9px 12px;
+  border: 1px solid #e2e8f0;
+  font-size: 13px;
+}
+
+.analysis-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  margin: 12px 0 4px;
+}
+
+.emotion-distribution {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.emotion-row-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.emotion-input {
+  max-width: 72px;
+}
+
+.emotion-bar {
+  width: 100%;
+  height: 8px;
+  background: #e5e7eb;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.emotion-bar span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+}
+
+.activity-type-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.activity-type-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+}
+
+.activity-type-card.selected {
+  border-color: #93c5fd;
+  box-shadow: inset 0 0 0 1px #bfdbfe;
+}
+
+.activity-type-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border: none;
+  background: #0f172a;
+  color: #fff;
+  border-radius: 0;
+}
+
+.activity-type-icon {
+  font-size: 16px;
+}
+
+.activity-type-detail {
+  border: none;
+  border-top: 1px solid #e2e8f0;
+  border-radius: 0 0 12px 12px;
+  min-height: 60px;
+  padding: 10px 12px;
+  resize: vertical;
+}
+
+.analysis-footer-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: auto;
+}
+
+.activity-detail-modal {
+  max-width: 880px;
+}
+
+.activity-detail-table {
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+
+.activity-detail-table-head,
+.activity-detail-row {
+  display: grid;
+  grid-template-columns: 120px 1fr 140px 1fr;
+  gap: 12px;
+  padding: 10px 14px;
+  align-items: center;
+}
+
+.activity-detail-table-head {
+  background: #f8fafc;
+  font-size: 13px;
+  font-weight: 600;
+  color: #475569;
+}
+
+.activity-detail-row:nth-child(odd) {
+  background: #fcfdff;
+}
+
+.activity-detail-empty {
+  padding: 16px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.activity-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.activity-summary-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px;
+  background: #fff;
+}
+
+.activity-analysis-box {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 14px;
+  background: #f8fafc;
+  font-size: 13px;
+  color: #374151;
+}
+
+.activity-type-chip {
+  display: inline-flex;
+  padding: 3px 8px;
+  background: #eef2ff;
+  color: #4338ca;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.emotion-chip-selected {
+  background: #fb7185;
+  color: #ffffff;
+}
+
+.emotion-chip-unselected {
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.emotion-chip-label {
+  white-space: nowrap;
+}
+
+.emotion-chip-icon {
+  font-size: 11px;
+}
+
+.emotion-chip-add-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.emotion-chip-input {
+  flex: 1;
+}
+
+.btn.small,
+.btn.ghost.small {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+@media (max-width: 900px) {
+  .detail-analysis-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .analysis-scroll-panel {
+    max-height: none;
+  }
+
+  .upload-card-summary-row {
+    flex-direction: column;
+  }
+}
+
+/* ==============================================
+   🎨 꿈이자라는뜰 메인 컬러 팔레트 적용 (Override Layer)
+   ============================================== */
+
+:root {
+  --primary: #FF1458;
+  --green: #589F7E;
+  --lime: #80A324;
+  --yellow: #FCB815;
+  --orange: #EF7A03;
+  --accent: var(--primary);
+}
+
+/* 버튼 기본 */
+button {
+  background-color: var(--primary);
+  border-color: var(--primary);
+  color: #ffffff;
+}
+
+button:hover {
+  border-color: #e1134f;
+  background-color: #e1134f;
+}
+
+@media (prefers-color-scheme: light) {
+  button {
+    background-color: var(--primary);
+    color: #ffffff;
+  }
+}
+
+/* .btn 공통 */
+.btn {
+  background: var(--primary);
+  color: #fff;
+}
+
+.btn.secondary {
+  background: #ffffff;
+  color: var(--primary);
+  border: 1px solid #ffd0df;
+}
+
+.btn.ghost {
+  background: transparent;
+  border: 1px dashed #ffbfd5;
+  color: var(--primary);
+}
+
+.btn.ghost:hover {
+  background: #fff3f7;
+}
+
+/* TopNav 활성 탭 */
+.nav-tab.active {
+  background: var(--primary);
+  color: #ffffff;
+}
+
+/* 학생 아바타 & 지표 색상 */
+.student-avatar {
+  background: var(--primary);
+}
+
+.metric-blue {
+  color: var(--primary);
+}
+
+.metric-green {
+  color: var(--green);
+}
+
+.metric-purple {
+  color: var(--orange);
+}
+
+/* 업로드 카드 상태 색감 */
+.upload-card-success {
+  border-color: var(--green);
+  background: #f1fff7;
+}
+
+.upload-card-processing {
+  border-color: var(--yellow);
+  background: #fff9e7;
+}
+
+.upload-card-failed {
+  border-color: var(--orange);
+  background: #fff3e8;
+}
+
+/* 업로드 Progress */
+.upload-card-success .overall-progress,
+.upload-card-success .step-progress {
+  background: #e2f7ec;
+}
+.upload-card-success .overall-progress > i,
+.upload-card-success .step-progress > i {
+  background: var(--green);
+}
+
+.upload-card-processing .overall-progress,
+.upload-card-processing .step-progress {
+  background: #ffeec3;
+}
+.upload-card-processing .overall-progress > i,
+.upload-card-processing .step-progress > i {
+  background: var(--yellow);
+}
+
+.upload-card-failed .overall-progress,
+.upload-card-failed .step-progress {
+  background: #ffe0d0;
+}
+.upload-card-failed .overall-progress > i,
+.upload-card-failed .step-progress > i {
+  background: var(--orange);
+}
+
+/* 카드 셸 상태 */
+.card-shell-success {
+  border-color: var(--green);
+}
+
+.card-shell-error {
+  border-color: var(--orange);
+}
+
+.card-shell-processing {
+  border-color: var(--yellow);
+}
+
+/* 배지 (badge) */
+.badge-success {
+  background: #e4ffe8;
+  color: var(--green);
+}
+
+.badge-warning {
+  background: #fff4cc;
+  color: var(--yellow);
+}
+
+.badge-error {
+  background: #ffe4d5;
+  color: var(--orange);
+}
+
+/* Report 상태 뱃지 */
+.report-status-badge.success {
+  background: #e4ffe8;
+  border-color: var(--green);
+  color: var(--green);
+}
+
+.report-status-badge.running {
+  background: #fff4cc;
+  border-color: var(--yellow);
+  color: var(--yellow);
+}
+
+.report-status-badge.failed {
+  background: #ffe4d5;
+  border-color: var(--orange);
+  color: var(--orange);
+}
+
+/* Report 아이콘 & 용도 뱃지 */
+.report-card-icon {
+  background: #ffe0ea;
+  color: var(--primary);
+}
+
+.report-purpose-badge {
+  background: #ffe0ea;
+  color: var(--primary);
+}
+
+/* 데드라인 진행바 */
+.report-deadline-inner {
+  background: var(--primary);
+}
+
+/* 능력/감정 칩 */
+.skill-chip {
+  background: #ffe0ea;
+  color: var(--primary);
+}
+
+.emotion-chip {
+  background: #ffd9c2;
+  color: var(--orange);
+}
+
+.emotion-chip-selected {
+  background: var(--primary);
+  color: #ffffff;
+}
+
+.emotion-chip-unselected {
+  background: var(--green);
+  color: #ffffff;
+}
+
+/* 활동 타입 칩 */
+.activity-type-chip {
+  background: #ffe0ea;
+  color: var(--primary);
+}
+
+/* 활동 타입 카드 헤더 버튼 */
+.activity-type-toggle {
+  background: var(--primary);
+}
+
+/* 필터 아이콘 */
+.filter-icon {
+  background: #ffe0ea;
+}
+
+/* 프로필 메뉴 hover */
+.profile-menu-item:hover {
+  background: #ffe9f1;
+}
+
+/* 수정 모드 버튼 active */
+.detail-header-actions .btn.secondary.active {
+  background: #ffe9f1;
+  color: var(--primary);
+}
+
+/* 감정 분포 legend 컬러를 팔레트에 맞게 */
+.legend-positive {
+  background: var(--green);
+}
+.legend-negative {
+  background: var(--primary);
+}
+.legend-neutral {
+  background: var(--yellow);
 }
