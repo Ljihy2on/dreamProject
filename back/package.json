@@ -2,9 +2,9 @@
   "name": "db_node",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "server.js",          // 엔트리 파일을 server.js로
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node server.js"  // ⭐ Render가 이걸로 서버 실행
   },
   "keywords": [],
   "author": "",

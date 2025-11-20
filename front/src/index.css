@@ -1849,7 +1849,7 @@ button:focus-visible {
 
 .detail-header-row h3 {
   margin: 0;
-  padding: 0;
+  padding: 0; /* .modal-card h3 기본 padding 제거 */
   font-size: 18px;
   font-weight: 600;
 }
@@ -1862,34 +1862,40 @@ button:focus-visible {
   padding-right: 20px;
 }
 
-/* wide 모달 본문 레이아웃 (좌:우 = 4:6) */
+/* wide 모달 본문 레이아웃 */
 .detail-layout {
   margin-top: 16px;
   display: flex;
   gap: 24px;
   flex: 1;
   min-height: 420px;
-  margin-bottom: 16px; /* 하단 버튼과 약간의 간격 */
 }
 
-/* 왼쪽: 원본 텍스트 영역 (40%) */
+/* 왼쪽: 추출 텍스트 영역을 더 넓게 */
 .detail-left {
-  flex: 4;
+  flex: 2.1;
   min-width: 0;
+  height : 70%;
   display: flex;
   flex-direction: column;
 }
 
-/* 오른쪽: AI 분석 카드 영역 (60%) */
+.detail-left h4 {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* 오른쪽: 분석 카드 영역(텍스트보다 좁게) */
 .detail-right {
-  flex: 6;
-  min-width: 0;
+  flex: 1.2;
+  min-width: 320px;
+  max-width: 420px;
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 
-.detail-left h4,
 .detail-right h4 {
   margin: 0 0 8px;
   font-size: 14px;
@@ -1898,12 +1904,9 @@ button:focus-visible {
 
 /* ===== 텍스트 입력 / 보기 박스 ===== */
 
-/* ===== 텍스트 입력 / 보기 박스 ===== */
-
 .detail-textarea {
-  width: 100%;              /* 패널 가로 전체 사용 */
-  min-height: 260px;
-  max-height: 440px;        /* 너무 길어지지 않게 제한 */
+  width: 70%;
+  height: 500px;
   resize: vertical;
   border-radius: 18px;
   border: 1px solid #e5e7eb;
@@ -1923,8 +1926,8 @@ button:focus-visible {
 }
 
 .detail-text-box {
-  width: 100%;
-  min-height: 260px;
+  width: 90%;
+  min-height: 360px;
   border-radius: 18px;
   border: 1px solid #f3f4f6;
   background: #f7f8fb;
@@ -1934,7 +1937,6 @@ button:focus-visible {
   color: #111827;
   white-space: pre-wrap;
 }
-
 
 /* ===== 우측 카드 공통 스타일 ===== */
 
@@ -2431,7 +2433,7 @@ button:focus-visible {
   padding: 16px 18px;
   display: flex;
   flex-direction: column;
-  height: 100%;
+  height: 60%;
 }
 
 .analysis-panel-header h4 {
@@ -2944,4 +2946,97 @@ button:hover {
 }
 .legend-neutral {
   background: var(--yellow);
+}
+
+/* ===========================================
+   🔧 Upload 상세 모달 레이아웃 최종 오버라이드
+   - 좌/우 비율 4:6
+   - 왼쪽/오른쪽 같은 높이
+   - 오른쪽 내용만 스크롤
+   =========================================== */
+
+/* 모달 전체: 화면 안에 딱 맞게 */
+.detail-analysis-modal {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 80px);
+}
+
+/* 본문 영역: 좌/우 레이아웃 */
+.detail-analysis-modal .detail-layout.detail-layout-modern {
+  margin-top: 16px;
+  margin-bottom: 16px; /* 하단 버튼과 간격 */
+  display: flex;
+  gap: 24px;
+  flex: 1;
+  min-height: 0;       /* flex 안에서 높이 계산 제대로 되도록 */
+  align-items: stretch;
+}
+
+/* 왼쪽: 4 */
+.detail-analysis-modal .detail-left {
+  flex: 4;
+  min-width: 0;
+  display: flex;
+}
+
+/* 오른쪽: 6 */
+.detail-analysis-modal .detail-right {
+  flex: 6;
+  min-width: 0;
+  display: flex;
+}
+
+/* 좌/우 공통 패널이 같은 높이 가지도록 */
+.detail-analysis-modal .detail-panel,
+.detail-analysis-modal .analysis-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ===== 왼쪽 텍스트 영역 ===== */
+
+.detail-analysis-modal .detail-textarea,
+.detail-analysis-modal .detail-text-box {
+  flex: 1;             /* 패널 높이를 꽉 채움 */
+  width: 100%;
+  min-height: 0;
+  max-height: none;    /* 이전 max-height 제거 */
+  resize: vertical;
+  overflow-y: auto;    /* 내용이 많으면 내부 스크롤 */
+  border-radius: 18px;
+  border: 1px solid #e5e7eb;
+  background: #f7f8fb;
+  padding: 14px 16px;
+  font-size: 14px;
+  line-height: 1.5;
+  box-sizing: border-box;
+}
+
+.detail-analysis-modal .detail-textarea:focus {
+  border-color: #111827;
+  box-shadow: 0 0 0 1px #11182712;
+  background: #ffffff;
+}
+
+/* ===== 오른쪽 분석 스크롤 영역 ===== */
+
+.detail-analysis-modal .analysis-scroll-panel {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;   /* 오른쪽 내용만 스크롤 */
+  margin: 16px 0;
+}
+
+/* ===== 하단 버튼 오른쪽 정렬 ===== */
+
+.detail-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
 }
