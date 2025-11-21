@@ -1,5 +1,3 @@
-// src/lib/api.js
-
 // 백엔드 기본 URL
 // - 개발/배포 환경 모두에서 VITE_API_BAS 를 우선 사용
 //   예) http://localhost:3000, https://dreamproject-ia6s.onrender.com
@@ -85,6 +83,24 @@ async function mockResponse(path, options) {
     }
   }
 
+  // Gemini 관련 목 응답
+  if (path === '/ai/extract-records' && options && options.method === 'POST') {
+    return {
+      ok: true,
+      model: 'mock-gemini',
+      raw: JSON.stringify({ records: [] }),
+      parsed: { records: [] },
+    }
+  }
+
+  if (path === '/ai/generate-report' && options && options.method === 'POST') {
+    return {
+      ok: true,
+      model: 'mock-gemini',
+      markdown: '# Mock 리포트\n\n(이것은 목업 응답입니다.)',
+    }
+  }
+
   // default mock
   return {}
 }
@@ -148,6 +164,42 @@ async function apiFetch(path, options = {}) {
   const ct = res.headers.get('content-type') || ''
   if (ct.includes('application/json')) return res.json()
   return res.text()
+}
+
+// -------------------- Gemini AI helper APIs --------------------
+
+/**
+ * PDF/TXT 원본 텍스트를 Gemini로 분석해서
+ * prompts.js의 PDF_TXT_EXTRACTION_PROMPT 기준 JSON records를 받는 헬퍼
+ *
+ * payload: { raw_text: string, file_name?: string }
+ */
+export async function extractRecordsWithGemini(payload) {
+  return apiFetch('/ai/extract-records', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload || {}),
+  })
+}
+
+/**
+ * Dashboard/Report 에서 집계한 데이터를 기반으로
+ * prompts.js의 REPORT_GENERATION_PROMPT 기준 Markdown 리포트 생성
+ *
+ * payload: {
+ *   student_profile,
+ *   date_range,
+ *   summary_stats,
+ *   activity_samples,
+ *   report_options
+ * }
+ */
+export async function generateReportWithGemini(payload) {
+  return apiFetch('/ai/generate-report', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload || {}),
+  })
 }
 
 export { apiFetch }

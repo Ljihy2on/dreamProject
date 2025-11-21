@@ -1,11 +1,43 @@
-// back/server.js
 require('dotenv').config()
 const express = require('express')
 const { supabase } = require('./supabaseClient')
 const multer = require('multer')
+const { GoogleGenerativeAI } = require('@google/generative-ai')
+const {
+  PDF_TXT_EXTRACTION_PROMPT,
+  REPORT_GENERATION_PROMPT,
+} = require('./prompts')
 
 const app = express()
 const port = process.env.PORT || 3000
+
+// -------------------- Gemini 클라이언트 설정 --------------------
+
+const geminiApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY
+let gemini = null
+
+if (geminiApiKey) {
+  gemini = new GoogleGenerativeAI(geminiApiKey)
+} else {
+  console.warn(
+    '⚠️ GEMINI_API_KEY 또는 GOOGLE_API_KEY 환경변수가 설정되어 있지 않습니다. Gemini 기반 기능이 비활성화됩니다.',
+  )
+}
+
+// ```json 코드블록 등을 제거하면서 JSON 파싱하는 유틸
+function parseJsonFromText(text) {
+  if (!text) return null
+  try {
+    let cleaned = text.trim()
+    cleaned = cleaned.replace(/^```json\s*/i, '')
+    cleaned = cleaned.replace(/^```\s*/i, '')
+    cleaned = cleaned.replace(/```$/i, '').trim()
+    return JSON.parse(cleaned)
+  } catch (e) {
+    console.error('Gemini JSON 파싱 에러:', e)
+    return null
+  }
+}
 
 // 파일 업로드용 multer (메모리 저장)
 const upload = multer({ storage: multer.memoryStorage() })
@@ -743,6 +775,151 @@ app.delete('/api/log_entries/:id', async (req, res) => {
 
   res.status(204).send()
 })
+
+// -------------------- Gemini AI 연동 API --------------------
+
+/**
+ * POST /ai/extract-records 또는 /api/ai/extract-records
+ * body: { raw_text: string, file_name?: string }
+ *
+ * PDF/TXT에서 추출한 원본 텍스트를 기반으로
+ * PDF_TXT_EXTRACTION_PROMPT 를 사용해 활동 레코드 JSON을 생성
+ */
+app.post(
+  ['/ai/extract-records', '/api/ai/extract-records'],
+  async (req, res) => {
+    if (!gemini) {
+      return res.status(500).json({
+        ok: false,
+        code: 'NO_GEMINI_KEY',
+        message:
+          'Gemini API key(GEMINI_API_KEY/GOOGLE_API_KEY)가 설정되어 있지 않습니다.',
+      })
+    }
+
+    const { raw_text, file_name } = req.body || {}
+
+    if (!raw_text || typeof raw_text !== 'string') {
+      return res
+        .status(400)
+        .json({ ok: false, message: 'raw_text 문자열이 필요합니다.' })
+    }
+
+    try {
+      const input = {
+        raw_text,
+        file_name: file_name || null,
+      }
+
+      const modelName =
+        process.env.GEMINI_EXTRACTION_MODEL || 'gemini-1.5-flash'
+
+      const model = gemini.getGenerativeModel({
+        model: modelName,
+        generationConfig: {
+          // JSON 모드
+          responseMimeType: 'application/json',
+        },
+      })
+
+      const prompt =
+        PDF_TXT_EXTRACTION_PROMPT +
+        '\n\n[입력 JSON]\n' +
+        JSON.stringify(input)
+
+      const result = await model.generateContent(prompt)
+      const raw = result.response.text()
+      const parsed = parseJsonFromText(raw)
+
+      return res.json({
+        ok: true,
+        model: modelName,
+        raw,
+        parsed,
+      })
+    } catch (e) {
+      console.error('POST /ai/extract-records 에러:', e)
+      return res.status(500).json({
+        ok: false,
+        message: 'Gemini 추출 중 오류가 발생했습니다.',
+        error: e.toString(),
+      })
+    }
+  },
+)
+
+/**
+ * POST /ai/generate-report 또는 /api/ai/generate-report
+ *
+ * body 예시:
+ * {
+ *   student_profile: {...},
+ *   date_range: {...},
+ *   summary_stats: {...},
+ *   activity_samples: [...],
+ *   report_options: {...}
+ * }
+ *
+ * REPORT_GENERATION_PROMPT 를 사용해 PDF용 Markdown 리포트 본문 생성
+ */
+app.post(
+  ['/ai/generate-report', '/api/ai/generate-report'],
+  async (req, res) => {
+    if (!gemini) {
+      return res.status(500).json({
+        ok: false,
+        code: 'NO_GEMINI_KEY',
+        message:
+          'Gemini API key(GEMINI_API_KEY/GOOGLE_API_KEY)가 설정되어 있지 않습니다.',
+      })
+    }
+
+    try {
+      const {
+        student_profile,
+        date_range,
+        summary_stats,
+        activity_samples,
+        report_options,
+      } = req.body || {}
+
+      const payload = {
+        student_profile: student_profile || null,
+        date_range: date_range || null,
+        summary_stats: summary_stats || null,
+        activity_samples: activity_samples || [],
+        report_options: report_options || {},
+      }
+
+      const modelName = process.env.GEMINI_REPORT_MODEL || 'gemini-1.5-pro'
+
+      const model = gemini.getGenerativeModel({
+        model: modelName,
+      })
+
+      const prompt =
+        REPORT_GENERATION_PROMPT +
+        '\n\n[입력 JSON]\n' +
+        JSON.stringify(payload, null, 2)
+
+      const result = await model.generateContent(prompt)
+      const markdown = result.response.text()
+
+      return res.json({
+        ok: true,
+        model: modelName,
+        markdown,
+      })
+    } catch (e) {
+      console.error('POST /ai/generate-report 에러:', e)
+      return res.status(500).json({
+        ok: false,
+        message: 'Gemini 리포트 생성 중 오류가 발생했습니다.',
+        error: e.toString(),
+      })
+    }
+  },
+)
 
 // -------------------- 대시보드 집계 API (/api/dashboard) --------------------
 /**

@@ -1,7 +1,7 @@
 // src/pages/Report.jsx
 import React, { useEffect, useState, useMemo } from 'react'
 import Layout from '../components/Layout.jsx'
-import { apiFetch } from '../lib/api.js'
+import { apiFetch, generateReportWithGemini } from '../lib/api.js'
 
 // 프론트 단에서 env 그대로 다시 읽어옴 (api.js 안과 동일한 규칙)
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
@@ -27,6 +27,10 @@ export default function Report() {
   const [error, setError] = useState(null)
 
   const [nowTs, setNowTs] = useState(Date.now()) // 남은 시간 계산용 시각
+
+  // AI 리포트 생성 관련 상태
+  const [generating, setGenerating] = useState(false)
+  const [generateError, setGenerateError] = useState(null)
 
   // 🔹 시작일 > 종료일인 경우 검증
   const isInvalidRange =
@@ -295,7 +299,6 @@ export default function Report() {
     }
 
     // 여기서는 "조회" 역할만 수행.
-    // 실제 백엔드에서는 이 필터 정보로 AI 리포트 생성 + 저장까지 처리.
     fetchReports()
   }
 
@@ -407,6 +410,139 @@ export default function Report() {
     } catch (e) {
       console.error(e)
       alert('다운로드 중 오류가 발생했습니다.')
+    }
+  }
+
+  // ---------- Gemini AI 리포트 생성 & 즉시 다운로드(.md) ----------
+
+  async function handleGenerateAiReport() {
+    if (filterMode === 'range' && isInvalidRange) {
+      alert(
+        '시작일이 종료일보다 늦을 수 없습니다. 기간을 다시 선택해주세요.',
+      )
+      return
+    }
+
+    const from =
+      filterMode === 'range'
+        ? startDate || null
+        : singleDate || null
+    const to =
+      filterMode === 'range'
+        ? endDate || startDate || null
+        : singleDate || null
+
+    if (!from) {
+      alert('리포트를 생성할 날짜(또는 기간)를 선택해 주세요.')
+      return
+    }
+
+    if (!studentId || studentId === 'all') {
+      alert('리포트를 생성할 학생을 선택해 주세요.')
+      return
+    }
+
+    try {
+      setGenerating(true)
+      setGenerateError(null)
+
+      // 1) 학생 프로필
+      let studentProfile = null
+      try {
+        studentProfile = await apiFetch(`/api/students/${studentId}`)
+      } catch (e) {
+        console.warn('학생 정보를 불러오지 못했습니다.', e)
+      }
+
+      // 2) 대시보드 요약
+      let summaryStats = {}
+      try {
+        const dash = await apiFetch(
+          `/api/dashboard?studentId=${encodeURIComponent(
+            studentId,
+          )}&from=${from}&to=${to}`,
+        )
+        summaryStats = {
+          metrics: dash.metrics || {},
+          emotion_distribution: dash.emotionDistribution || [],
+          activity_series: dash.activitySeries || [],
+          activity_ability_list: dash.activityAbilityList || [],
+        }
+      } catch (e) {
+        console.warn('대시보드 데이터를 불러오지 못했습니다.', e)
+      }
+
+      // 3) 활동 샘플
+      let activitySamples = []
+      try {
+        const logs = await apiFetch(
+          `/api/log_entries?student_id=${encodeURIComponent(
+            studentId,
+          )}&from=${from}&to=${to}&limit=50`,
+        )
+        const items = Array.isArray(logs?.items) ? logs.items : logs || []
+        activitySamples = items.map(item => ({
+          id: item.id,
+          date: item.log_date,
+          emotion_tag: item.emotion_tag,
+          activity_tags: item.activity_tags,
+          log_content: item.log_content,
+          related_metrics: item.related_metrics,
+        }))
+      } catch (e) {
+        console.warn('활동 샘플을 불러오지 못했습니다.', e)
+      }
+
+      const tone =
+        purpose === 'parent'
+          ? '부드럽고 공감적인 학부모 상담용 톤'
+          : purpose === 'school'
+          ? '공식적이고 간결한 학교 제출용 톤'
+          : '분석적이고 요약 중심의 톤'
+
+      const payload = {
+        student_profile: studentProfile,
+        date_range: { start_date: from, end_date: to },
+        summary_stats: summaryStats,
+        activity_samples: activitySamples,
+        report_options: {
+          purpose,
+          tone,
+        },
+      }
+
+      const result = await generateReportWithGemini(payload)
+
+      if (!result || result.ok === false) {
+        throw new Error(result?.message || 'AI 리포트 생성 실패')
+      }
+
+      const markdown = result.markdown || result.text || ''
+      if (!markdown) {
+        throw new Error('AI가 리포트 내용을 반환하지 않았습니다.')
+      }
+
+      const blob = new Blob([markdown], {
+        type: 'text/markdown;charset=utf-8',
+      })
+      const filename = `${(studentProfile?.name || '학생')
+        .replace(/\s+/g, '_')
+        .slice(0, 30)}_${from}_리포트.md`
+
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      console.error(e)
+      setGenerateError('AI 리포트 생성 중 오류가 발생했습니다.')
+      alert('AI 리포트 생성 중 오류가 발생했습니다.')
+    } finally {
+      setGenerating(false)
     }
   }
 
@@ -560,6 +696,16 @@ export default function Report() {
                   >
                     필터 초기화
                   </button>
+                  <button
+                    type="button"
+                    className="btn secondary report-ai-btn"
+                    onClick={handleGenerateAiReport}
+                    disabled={generating}
+                  >
+                    {generating
+                      ? 'AI 리포트 생성 중...'
+                      : 'AI 리포트 생성(.md)'}
+                  </button>
                   <button type="submit" className="btn">
                     적용하기
                   </button>
@@ -577,6 +723,15 @@ export default function Report() {
                 >
                   시작일이 종료일보다 늦을 수 없습니다. 날짜를 다시
                   선택해 주세요.
+                </div>
+              )}
+
+              {generateError && (
+                <div
+                  className="error"
+                  style={{ marginTop: 4 }}
+                >
+                  {generateError}
                 </div>
               )}
             </form>
@@ -600,7 +755,10 @@ export default function Report() {
                     const canDownload = report.outputs.includes('pdf')
 
                     return (
-                      <article key={report.id} className="report-card">
+                      <article
+                        key={report.id}
+                        className="report-card"
+                      >
                         {/* 카드 상단: 아이콘 + 제목/메타 + 상태 뱃지 */}
                         <div className="report-card-header">
                           <div className="report-card-icon-wrap">
@@ -608,9 +766,13 @@ export default function Report() {
                           </div>
 
                           <div className="report-card-title-block">
-                            <div className="report-card-title">{report.studentName}</div>
+                            <div className="report-card-title">
+                              {report.studentName}
+                            </div>
 
-                            <div className="report-purpose-badge">{report.purposeLabel}</div>
+                            <div className="report-purpose-badge">
+                              {report.purposeLabel}
+                            </div>
 
                             <div className="report-card-meta">
                               <div>{report.periodLabel}</div>
@@ -619,7 +781,11 @@ export default function Report() {
                           </div>
 
                           <div className="report-card-status">
-                            <span className={getStatusBadgeClass(report.status)}>
+                            <span
+                              className={getStatusBadgeClass(
+                                report.status,
+                              )}
+                            >
                               {getStatusLabel(report.status)}
                             </span>
                           </div>
@@ -627,13 +793,17 @@ export default function Report() {
 
                         {/* 남은 시간 + 진행 바 */}
                         <div className="report-remaining-row">
-                          <span className="muted">⏱ 남은 시간: {remaining.label}</span>
+                          <span className="muted">
+                            ⏱ 남은 시간: {remaining.label}
+                          </span>
                         </div>
                         <div className="report-deadline-progress">
                           <div className="report-deadline-bar">
                             <div
                               className="report-deadline-inner"
-                              style={{ width: `${remaining.percent}%` }}
+                              style={{
+                                width: `${remaining.percent}%`,
+                              }}
                             />
                           </div>
                         </div>
@@ -643,7 +813,9 @@ export default function Report() {
                           <div className="report-card-footer-left">
                             <span className="muted report-created-at">
                               생성일:{' '}
-                              {report.createdAt ? report.createdAt.slice(0, 10) : '-'}
+                              {report.createdAt
+                                ? report.createdAt.slice(0, 10)
+                                : '-'}
                             </span>
                           </div>
 
@@ -651,7 +823,9 @@ export default function Report() {
                             <button
                               type="button"
                               className="btn report-btn"
-                              onClick={() => handleViewDetail(report)}
+                              onClick={() =>
+                                handleViewDetail(report)
+                              }
                             >
                               상세보기
                             </button>
@@ -659,7 +833,9 @@ export default function Report() {
                               type="button"
                               className="btn secondary report-btn"
                               disabled={!canDownload}
-                              onClick={() => handleDownload(report)}
+                              onClick={() =>
+                                handleDownload(report)
+                              }
                             >
                               다운로드
                             </button>
@@ -669,15 +845,15 @@ export default function Report() {
                               onClick={() => handleDelete(report)}
                             >
                               삭제
-                           </button>
+                            </button>
                           </div>
                         </div>
-                     </article>
-                      )
-                    })}
-                    </div>
-                  </>
-                )}
+                      </article>
+                    )
+                  })}
+                </div>
+              </>
+            )}
           </section>
         </div>
       </div>

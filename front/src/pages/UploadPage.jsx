@@ -1,7 +1,7 @@
 // src/pages/UploadPage.jsx
 import React, { useEffect, useRef, useState } from 'react'
 import Layout from '../components/Layout'
-import { apiFetch } from '../lib/api.js'
+import { apiFetch, extractRecordsWithGemini } from '../lib/api.js'
 
 /**
  * ============================
@@ -25,9 +25,9 @@ import { apiFetch } from '../lib/api.js'
  *    log_content     : text (텍스트 전체 or 요약)
  *    related_metrics : jsonb (점수, 소요시간, 능력 등 복합 구조)
  *
- * - tags / log_entry_tags
- *    tags.name       : text (감정/활동/기타 태그명)
- *    log_entry_tags  : log_entry_id + tag_id
+ * - emotion_keywords
+ *    id        : uuid
+ *    name      : text (감정 키워드)
  *
  * 이 UploadPage에서는 /uploads/:id/log 로 아래처럼 저장합니다:
  *
@@ -42,8 +42,8 @@ import { apiFetch } from '../lib/api.js'
  *       student_name: "학생 이름(프론트 표시용)",
  *       log_date: "YYYY-MM-DD",
  *       emotion_tag: "감정 요약 한 줄",
- *       emotion_tags: ["즐거움", "긴장" ...], // 서버에서 tags/log_entry_tags로 해석 가능
- *       activity_tags: ["수확", "파종" ...],  // 서버에서 text[]로 저장
+ *       emotion_tags: ["즐거움", "긴장" ...],
+ *       activity_tags: ["수확", "파종" ...],
  *       log_content: "<공통 텍스트 또는 학생별 텍스트>",
  *       related_metrics: {
  *         duration_minutes: 90,
@@ -61,6 +61,11 @@ import { apiFetch } from '../lib/api.js'
  * }
  */
 
+// -------------------- 업로드 목록 전역 캐시 --------------------
+// 페이지를 최초로 들어왔을 때만 서버에서 로딩하고,
+// 이후 라우팅으로 다시 들어올 때는 이 캐시를 그대로 사용합니다.
+let uploadsCache = null
+
 // -------------------- 헬퍼 / 상수 --------------------
 
 const STEP_DEFS = [
@@ -70,7 +75,7 @@ const STEP_DEFS = [
   { key: 'sentiment', label: '감정 분석' },
 ]
 
-// 감정 키워드 기본 세트(태그 테이블이 비어 있을 때만 사용)
+// 감정 키워드 기본 세트(테이블이 비어 있을 때만 사용)
 const DEFAULT_EMOTION_KEYWORDS = [
   '흐뭇한',
   '힘든',
@@ -209,7 +214,7 @@ function normalizeAnalysis(raw) {
 
   return {
     students: a.students || raw.students || [],
-    date: a.date || raw.date || raw.log_date || null, // log_entries.log_date
+    date: a.date || raw.date || raw.log_date || null,
     activityName:
       a.activityName ||
       raw.activityName ||
@@ -257,14 +262,14 @@ function normalizeAnalysis(raw) {
     rawTextCleaned:
       a.rawTextCleaned ||
       raw.rawTextCleaned ||
-      raw.log_content || // log_entries.log_content
+      raw.log_content ||
       raw.raw_text_cleaned ||
       raw.raw_text ||
       '',
   }
 }
 
-// 업로드 아이템 정규화 (ingest_uploads + 조인 결과 대응)
+// 업로드 아이템 정규화
 function hydrateUpload(raw) {
   const id =
     raw.id ||
@@ -281,7 +286,6 @@ function hydrateUpload(raw) {
     raw.meta?.student_name ||
     '학생 미확인'
 
-  // ingest_uploads.created_at 기준
   const uploadedAt =
     raw.created_at ||
     raw.uploaded_at ||
@@ -289,12 +293,10 @@ function hydrateUpload(raw) {
     raw.createdAt ||
     null
 
-  // ingest_uploads.status / progress 기준
   const status = raw.status || 'queued'
   const progress =
     typeof raw.progress === 'number' ? raw.progress : raw.overall_progress
 
-  // 단계별 progress가 따로 안 오면, 전체 progress로 채움
   let steps = raw.steps
   if (!steps) {
     const base = typeof progress === 'number' ? progress : 0
@@ -434,21 +436,16 @@ function createDetailState(overrides = {}) {
     saving: false,
     saved: false,
 
-    // 왼쪽: 공통 원본 텍스트
     editedText: '',
 
-    // 학생 탭 / 학생별 분석
-    students: [], // [{ id, name }]
+    students: [],
     activeStudentId: null,
-    analysisByStudent: {
-      // [studentId]: { analysis: {...}, activityTypes: {...} }
-    },
+    analysisByStudent: {},
 
     ...overrides,
   }
 }
 
-// 활동 유형 상세 모달 초기 상태
 const INITIAL_ACTIVITY_DETAIL_MODAL = {
   open: false,
   loading: false,
@@ -458,7 +455,6 @@ const INITIAL_ACTIVITY_DETAIL_MODAL = {
   error: '',
 }
 
-// detail 상태에서 현재 활성 학생 데이터 가져오기
 function getActiveStudentState(detail) {
   const students = detail.students || []
   const map = detail.analysisByStudent || {}
@@ -485,9 +481,9 @@ function getActiveStudentState(detail) {
 export default function UploadPage() {
   const fileRef = useRef(null)
 
-  const [uploads, setUploads] = useState([])
+  const [uploads, setUploads] = useState(() => uploadsCache || [])
+  const [loading, setLoading] = useState(() => !uploadsCache)
   const [dragOver, setDragOver] = useState(false)
-  const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
   const [detail, setDetail] = useState(() => createDetailState())
@@ -497,28 +493,41 @@ export default function UploadPage() {
   const [downloading, setDownloading] = useState(false)
   const [emotionKeywords, setEmotionKeywords] = useState([])
 
-  // ---------- 서버에서 업로드 목록 ----------
+  // Gemini AI 관련 상태
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiError, setAiError] = useState('')
 
+  // 업로드 + 캐시 동시 갱신
+  function updateUploads(updater) {
+    setUploads(prev => {
+      const next =
+        typeof updater === 'function' ? updater(prev) : updater
+      uploadsCache = next
+      return next
+    })
+  }
+
+  // 업로드 목록 로드
   async function fetchUploads() {
     setLoading(true)
     setError('')
     try {
       const data = await apiFetch('/uploads')
       const items = normalizeUploads(data).map(hydrateUpload)
-      setUploads(items)
+      updateUploads(items)
     } catch (e) {
       console.error(e)
       setError('업로드 목록을 불러오는 중 오류가 발생했습니다.')
-      setUploads([])
+      updateUploads([])
     } finally {
       setLoading(false)
     }
   }
 
-  // 감정 키워드 목록 로드 (tags 테이블)
+  // 감정 키워드 세트 로드 (emotion_keywords)
   async function loadEmotionKeywords() {
     try {
-      const data = await apiFetch('/rest/v1/tags?select=*')
+      const data = await apiFetch('/rest/v1/emotion_keywords?select=*')
       const rows = Array.isArray(data)
         ? data
         : Array.isArray(data?.items)
@@ -554,11 +563,16 @@ export default function UploadPage() {
   }
 
   useEffect(() => {
-    fetchUploads()
+    if (!uploadsCache) {
+      fetchUploads()
+    } else {
+      updateUploads(uploadsCache)
+      setLoading(false)
+    }
     loadEmotionKeywords()
   }, [])
 
-  // ---------- 파일 업로드 (ingest_uploads) ----------
+  // ---------- 파일 업로드 ----------
 
   async function handleFiles(files) {
     const list = Array.from(files || [])
@@ -574,7 +588,7 @@ export default function UploadPage() {
         progress: 30,
       })
 
-      setUploads(prev => [tempUpload, ...prev])
+      updateUploads(prev => [tempUpload, ...prev])
 
       const form = new FormData()
       form.append('file', file)
@@ -604,18 +618,38 @@ export default function UploadPage() {
     }
   }
 
-  // ---------- 상세보기 모달: 학생/분석 초기화 ----------
+  // ---------- 업로드 삭제 ----------
+
+  async function handleDeleteUpload(uploadId) {
+    if (!uploadId) return
+    const ok = window.confirm('해당 업로드 기록을 삭제하시겠습니까?')
+    if (!ok) return
+
+    try {
+      setLoading(true)
+      await apiFetch(`/uploads/${uploadId}`, {
+        method: 'DELETE',
+      })
+      updateUploads(prev => prev.filter(u => u.id !== uploadId))
+    } catch (e) {
+      console.error(e)
+      alert('업로드 삭제 중 오류가 발생했습니다.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // ---------- 상세보기 모달 초기화 ----------
 
   async function openDetail(upload) {
     setDetail(createDetailState({ open: true, loading: true }))
+    setAiError('')
 
     try {
-      // /uploads/:id → ingest_uploads + log_entries + students 등 조인 결과라고 가정
       const uploadRes = await apiFetch(`/uploads/${upload.id}`)
 
       const hydrated = hydrateUpload({ ...upload, ...(uploadRes || {}) })
 
-      // 공통 원본 텍스트
       const initialText =
         uploadRes?.rawText ||
         uploadRes?.raw_text ||
@@ -623,11 +657,9 @@ export default function UploadPage() {
         hydrated.analysis?.rawTextCleaned ||
         ''
 
-      // 서버에서 넘어온 log_entries (이 업로드에서 생성된 활동 기록들)
       const serverLogEntries =
         uploadRes?.log_entries || uploadRes?.entries || []
 
-      // 서버에서 넘어온 students 배열 (조인 결과)
       const serverStudents =
         (uploadRes &&
           (uploadRes.students || uploadRes.student_list || [])) ||
@@ -636,7 +668,6 @@ export default function UploadPage() {
 
       let students = []
 
-      // 1) log_entries 기반 학생 추출
       const fromEntries = Array.isArray(serverLogEntries)
         ? serverLogEntries
         : []
@@ -652,7 +683,6 @@ export default function UploadPage() {
           `학생 ${idx + 1}`,
       }))
 
-      // 2) students 배열 기반
       const explicitStudents = Array.isArray(serverStudents)
         ? serverStudents.map((s, idx) => ({
             id: String(
@@ -671,7 +701,6 @@ export default function UploadPage() {
           }))
         : []
 
-      // 3) ingest_uploads.student_id 기반 fallback
       if (
         entryStudents.length === 0 &&
         explicitStudents.length === 0
@@ -695,11 +724,9 @@ export default function UploadPage() {
         students = Array.from(map.values())
       }
 
-      // 학생별 분석 맵
       const analysisByStudent = {}
 
       if (fromEntries.length > 0) {
-        // log_entries → 학생별 분석 상태 복원
         fromEntries.forEach(entry => {
           const stuId = String(
             entry.student_id ||
@@ -710,7 +737,6 @@ export default function UploadPage() {
 
           const normalized = normalizeAnalysis(entry)
 
-          // 활동 유형 태그(text[])가 있다면 활동 유형 상태에도 반영
           const activityTags = Array.isArray(entry.activity_tags)
             ? entry.activity_tags
             : []
@@ -737,7 +763,6 @@ export default function UploadPage() {
         })
       }
 
-      // 서버에 학생별 분석이 없으면, 기존 analysis를 복제해서 학생 수만큼 채움
       if (Object.keys(analysisByStudent).length === 0) {
         const base = hydrated.analysis || {}
         students.forEach(stu => {
@@ -804,7 +829,6 @@ export default function UploadPage() {
           error: '상세 정보를 불러오지 못했습니다. 기본 정보만 표시합니다.',
           students,
           activeStudentId: String(fallbackId),
-          analysisByStudent,
         }),
       )
     }
@@ -812,9 +836,10 @@ export default function UploadPage() {
 
   function closeDetail() {
     setDetail(createDetailState())
+    setAiError('')
   }
 
-  // ---------- 학생 탭 관련 ----------
+  // ---------- 학생 탭 ----------
 
   function handleSelectStudent(studentId) {
     setDetail(prev => {
@@ -861,7 +886,7 @@ export default function UploadPage() {
     })
   }
 
-  // ---------- 감정 키워드 / 활동 유형 - 학생별로 갱신 ----------
+  // ---------- 학생별 분석 업데이트 ----------
 
   function updateActiveStudent(updater) {
     setDetail(prev => {
@@ -896,7 +921,6 @@ export default function UploadPage() {
     })
   }
 
-  // 감정 키워드 토글 (현재 활성 학생)
   function toggleEmotionTagInDetail(label) {
     const trimmed = String(label || '').trim()
     if (!trimmed) return
@@ -921,7 +945,6 @@ export default function UploadPage() {
     })
   }
 
-  // 감정 키워드 새로 추가(+토글) – tags 테이블에 저장
   async function addEmotionKeywordInSupabase(label) {
     const trimmed = String(label || '').trim()
     if (!trimmed) return
@@ -933,7 +956,7 @@ export default function UploadPage() {
     }
 
     try {
-      const response = await apiFetch('/rest/v1/tags', {
+      const response = await apiFetch('/rest/v1/emotion_keywords', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -958,7 +981,6 @@ export default function UploadPage() {
     }
   }
 
-  // 활동 유형 선택 토글 (현재 활성 학생)
   function toggleActivityTypeSelection(key) {
     updateActiveStudent(current => {
       const nextMap = { ...(current.activityTypes || {}) }
@@ -975,7 +997,6 @@ export default function UploadPage() {
     })
   }
 
-  // 활동 유형 상세 입력 (현재 활성 학생)
   function updateActivityTypeDetail(key, detailText) {
     updateActiveStudent(current => ({
       ...current,
@@ -992,7 +1013,6 @@ export default function UploadPage() {
     }))
   }
 
-  // 분석 필드 공통 업데이트 (현재 활성 학생)
   function updateEditedAnalysis(patch) {
     updateActiveStudent(current => ({
       ...current,
@@ -1003,7 +1023,7 @@ export default function UploadPage() {
     }))
   }
 
-  // ---------- 텍스트 다운로드 (공통 원본) ----------
+  // ---------- 텍스트 다운로드 ----------
 
   async function handleDownloadOriginal() {
     if (!detail.upload || downloading) return
@@ -1038,6 +1058,154 @@ export default function UploadPage() {
     }
   }
 
+  // ---------- Gemini AI: 텍스트 → 활동 레코드 자동 구조화 ----------
+
+  function applyAiExtraction(records) {
+    if (!Array.isArray(records) || records.length === 0) return
+
+    setDetail(prev => {
+      if (!prev.upload) return prev
+
+      let students = [...(prev.students || [])]
+      const analysisByStudent = { ...(prev.analysisByStudent || {}) }
+
+      function ensureStudentId(name) {
+        const trimmed = String(name || '').trim() || '학생'
+        const existing = students.find(s => s.name === trimmed)
+        if (existing) return existing.id
+        const newId = `ai-${students.length + 1}-${Date.now()}`
+        const newStu = { id: newId, name: trimmed }
+        students = [...students, newStu]
+        return newId
+      }
+
+      records.forEach(rec => {
+        const studentName =
+          rec.student_name ||
+          prev.upload.student_name ||
+          '학생'
+
+        const stuId = ensureStudentId(studentName)
+
+        const firstEmotion = Array.isArray(rec.emotions)
+          ? rec.emotions[0]
+          : null
+
+        const emotionTags = Array.isArray(rec.emotions)
+          ? rec.emotions
+              .map(e => e && e.label)
+              .filter(Boolean)
+          : []
+
+        const abilityAnalysis = rec.ability_analysis || {}
+
+        let activityTypes = buildActivityTypeState()
+        const actTypeText = rec.activity_type || ''
+
+        // 간단 매핑: activity_type 안에 "수확/파종/관찰/관리" 등의 단어가 포함되면 해당 칩 선택
+        Object.entries(ACTIVITY_TYPE_PRESETS).forEach(
+          ([key, cfg]) => {
+            if (actTypeText.includes(cfg.label)) {
+              activityTypes[key] = {
+                ...cfg,
+                selected: true,
+                detail: '',
+              }
+            }
+          },
+        )
+
+        const analysis = {
+          date: rec.date || prev.upload.uploaded_at || null,
+          activityName: rec.activity_title || '',
+          activityType: actTypeText || '',
+          durationMinutes: null,
+          note: rec.teacher_comment || '',
+          level: abilityAnalysis.level || '',
+          ability: Array.isArray(abilityAnalysis.main_abilities)
+            ? abilityAnalysis.main_abilities
+            : [],
+          score: null,
+          scoreExplanation: '',
+          emotionSummary: firstEmotion?.label || '',
+          emotionCause: firstEmotion?.reason || '',
+          observedBehaviors: Array.isArray(rec.behavior_tags)
+            ? rec.behavior_tags.join(', ')
+            : '',
+          emotionTags,
+          rawTextCleaned:
+            prev.editedText ||
+            prev.upload.raw_text ||
+            prev.upload.analysis?.rawTextCleaned ||
+            '',
+        }
+
+        analysisByStudent[stuId] = {
+          analysis,
+          activityTypes,
+        }
+      })
+
+      const nextActiveId =
+        prev.activeStudentId ||
+        (students[0] && students[0].id) ||
+        null
+
+      return {
+        ...prev,
+        students,
+        analysisByStudent,
+        activeStudentId: nextActiveId,
+        saved: false,
+      }
+    })
+  }
+
+  async function handleRunAiExtraction() {
+    if (!detail.upload || aiLoading) return
+
+    const sourceText =
+      (detail.editedText && detail.editedText.trim()) ||
+      detail.upload.raw_text ||
+      detail.upload.analysis?.rawTextCleaned ||
+      ''
+
+    if (!sourceText) {
+      alert(
+        '분석할 텍스트가 없습니다. 먼저 업로드 텍스트를 불러오거나 작성해 주세요.',
+      )
+      return
+    }
+
+    try {
+      setAiLoading(true)
+      setAiError('')
+
+      const res = await extractRecordsWithGemini({
+        raw_text: sourceText,
+        file_name: detail.upload.file_name,
+      })
+
+      const records =
+        res?.parsed?.records || res?.records || []
+
+      if (!Array.isArray(records) || records.length === 0) {
+        alert(
+          'AI가 활동 기록을 찾지 못했습니다. 텍스트를 다시 확인해 주세요.',
+        )
+        return
+      }
+
+      applyAiExtraction(records)
+    } catch (e) {
+      console.error(e)
+      setAiError('AI 분석 중 오류가 발생했습니다.')
+      alert('AI 분석 중 오류가 발생했습니다.')
+    } finally {
+      setAiLoading(false)
+    }
+  }
+
   // ---------- 활동 유형 상세 모달 ----------
 
   async function openActivityTypeSummary() {
@@ -1048,7 +1216,6 @@ export default function UploadPage() {
       loading: true,
     })
     try {
-      // 백엔드에서 log_entries를 집계한 뷰라고 가정 (예: activity_types_view)
       const data = await apiFetch(
         `/activity_types?upload_id=${detail.upload.id}`,
       )
@@ -1089,7 +1256,7 @@ export default function UploadPage() {
     setActivityDetailModal(INITIAL_ACTIVITY_DETAIL_MODAL)
   }
 
-  // ---------- DB 저장 (log_entries 구조로 저장) ----------
+  // ---------- DB 저장 ----------
 
   async function handleSaveLogEntry() {
     if (!detail.upload || detail.saving) return
@@ -1108,7 +1275,6 @@ export default function UploadPage() {
 
     const todayStr = new Date().toISOString().slice(0, 10)
 
-    // log_entries 형식으로 직렬화
     const logEntries = (detail.students || []).map(stu => {
       const state = detail.analysisByStudent?.[stu.id] || {}
       const analysis = state.analysis || {}
@@ -1157,12 +1323,12 @@ export default function UploadPage() {
       }
 
       return {
-        student_id: stu.id, // students.id와 매칭
-        student_name: stu.name, // 프론트 표시용 (옵션)
+        student_id: stu.id,
+        student_name: stu.name,
         log_date: logDate,
         emotion_tag: analysis.emotionSummary || '',
-        emotion_tags: emotionTags, // 서버에서 tags/log_entry_tags로 매핑 가능
-        activity_tags: selectedActivityLabels, // text[]
+        emotion_tags: emotionTags,
+        activity_tags: selectedActivityLabels,
         log_content: rawText,
         related_metrics: relatedMetrics,
       }
@@ -1197,11 +1363,9 @@ export default function UploadPage() {
         },
       }))
 
-      // 업로드 카드에 대표 log_entries 정보 반영 (대시보드와 연결될 raw 데이터)
-      setUploads(prev =>
+      updateUploads(prev =>
         prev.map(item => {
           if (item.id !== detail.upload.id) return item
-          // 대표 학생은 첫 번째 학생 기준
           const firstEntry = logEntries[0]
           return {
             ...item,
@@ -1459,6 +1623,15 @@ export default function UploadPage() {
                     <p className="card-subtitle current-step-label">
                       {displayStepLabel}
                     </p>
+                    {/* 업로드 삭제 버튼 */}
+                    <button
+                      type="button"
+                      className="btn ghost delete-upload-btn"
+                      style={{ marginTop: 8 }}
+                      onClick={() => handleDeleteUpload(upload.id)}
+                    >
+                      삭제
+                    </button>
                   </div>
                 </div>
 
@@ -1529,7 +1702,6 @@ export default function UploadPage() {
           aria-modal="true"
         >
           <div className="modal-card modal-card-wide detail-analysis-modal">
-            {/* 헤더 */}
             <div className="detail-analysis-header">
               <div>
                 <h3>상세 편집 및 AI 분석</h3>
@@ -1540,6 +1712,14 @@ export default function UploadPage() {
                 </p>
               </div>
               <div className="detail-header-actions">
+                <button
+                  type="button"
+                  className="btn secondary"
+                  onClick={handleRunAiExtraction}
+                  disabled={aiLoading}
+                >
+                  {aiLoading ? 'AI 분석 중...' : 'AI로 자동 분석'}
+                </button>
                 <button
                   type="button"
                   className="btn secondary"
@@ -1560,7 +1740,24 @@ export default function UploadPage() {
               </div>
             </div>
 
-            {/* 학생 탭 */}
+            {detail.error && (
+              <div
+                className="error"
+                style={{ marginBottom: 8 }}
+              >
+                {detail.error}
+              </div>
+            )}
+
+            {aiError && (
+              <div
+                className="error"
+                style={{ marginBottom: 8 }}
+              >
+                {aiError}
+              </div>
+            )}
+
             <div
               className="student-tabs-row"
               style={{
@@ -1620,24 +1817,13 @@ export default function UploadPage() {
               </button>
             </div>
 
-            {detail.error && (
-              <div
-                className="error"
-                style={{ marginBottom: 12 }}
-              >
-                {detail.error}
-              </div>
-            )}
-
             {detail.loading ? (
               <div className="muted">
                 불러오는 중입니다...
               </div>
             ) : (
               <>
-                {/* 좌/우 4:6 레이아웃 (CSS에서 비율/스크롤 처리) */}
                 <div className="detail-layout detail-layout-modern">
-                  {/* 왼쪽: 공통 원본 텍스트 */}
                   <section className="detail-left">
                     <div className="detail-panel">
                       <div className="detail-panel-head">
@@ -1667,7 +1853,6 @@ export default function UploadPage() {
                     </div>
                   </section>
 
-                  {/* 오른쪽: 학생별 AI 분석 패널 */}
                   <section className="detail-right">
                     {(() => {
                       const {
@@ -1714,7 +1899,6 @@ export default function UploadPage() {
                           </div>
 
                           <div className="analysis-scroll-panel">
-                            {/* 활동 기본 정보 */}
                             <div className="analysis-section">
                               <h5>활동 기본 정보</h5>
                               <div className="analysis-grid">
@@ -1829,7 +2013,6 @@ export default function UploadPage() {
                               </div>
                             </div>
 
-                            {/* 감정 키워드 */}
                             <div className="analysis-section">
                               <div className="analysis-section-head">
                                 <div>
@@ -1838,8 +2021,7 @@ export default function UploadPage() {
                                     현재 학생에 해당하는 감정 키워드를
                                     선택하거나 직접 추가할 수 있습니다.
                                     저장 시 emotion_tags로 전달되어
-                                    tags / log_entry_tags 구조에
-                                    매핑됩니다.
+                                    분석/리포트에 활용됩니다.
                                   </p>
                                 </div>
                               </div>
@@ -1859,7 +2041,6 @@ export default function UploadPage() {
                               />
                             </div>
 
-                            {/* 활동 유형 선택 */}
                             <div className="analysis-section">
                               <div className="analysis-section-head">
                                 <div>
@@ -1944,7 +2125,6 @@ export default function UploadPage() {
                   </section>
                 </div>
 
-                {/* 모달 하단: 우측 정렬 버튼 */}
                 <div className="detail-modal-footer">
                   <button
                     className="btn"
@@ -2150,7 +2330,6 @@ function EmotionKeywordSelector({
 
   return (
     <div>
-      {/* 선택된 감정만 Chip으로 표시 */}
       <div className="emotion-chips-row">
         {safeSelected.map(label => (
           <button
@@ -2167,7 +2346,6 @@ function EmotionKeywordSelector({
         ))}
       </div>
 
-      {/* 입력 + 추가/검색 */}
       <form
         className="emotion-chip-add-row"
         onSubmit={handleSubmit}
@@ -2187,7 +2365,6 @@ function EmotionKeywordSelector({
         </button>
       </form>
 
-      {/* 세트에서 검색된 감정 제안 */}
       {suggestions.length > 0 && (
         <div
           className="emotion-chips-row"

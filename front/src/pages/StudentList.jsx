@@ -4,20 +4,45 @@ import Layout from '../components/Layout'
 import { apiFetch } from '../lib/api.js'
 
 /**
- * 관리자 – 학생 관리 페이지
+ * 관리자 – 학생 관리 페이지 (Supabase students 테이블 기반)
+ *
+ * students 테이블 스키마 (요약)
+ * - id: uuid (PK)
+ * - name: text            // 학생 본명
+ * - status: text          // 재학중 / 휴학 / 졸업 등
+ * - admission_date: date  // 입학일
+ * - birth_date: date      // 생년월일
+ * - notes: text           // 별명 등 메모
  *
  * API 스펙(예시)
  * GET    /api/students
- *   -> [{ id, nickname, realName }]
+ *   -> [{ id, name, status, admission_date, birth_date, notes }]
  *
  * POST   /api/students
- *   body: { nickname, realName }
+ *   body: {
+ *     name,             // 본명
+ *     notes,            // 별명
+ *     status,
+ *     admission_date,
+ *     birth_date
+ *   }
  *
  * PUT    /api/students/:id
- *   body: { nickname, realName }
+ *   body 동일
  *
  * DELETE /api/students/:id
  */
+
+const STATUS_OPTIONS = ['재학중', '휴학', '졸업']
+
+// UI에서 사용하기 위한 label
+function formatStudentLabel(s) {
+  const realName = s.name || ''
+  const nickname = s.notes || ''
+  if (nickname && realName) return `${nickname}(${realName})`
+  if (realName) return realName
+  return nickname || '이름 없음'
+}
 
 export default function StudentList() {
   const [students, setStudents] = useState([])
@@ -27,12 +52,18 @@ export default function StudentList() {
   // 신규 학생 추가용
   const [newNickname, setNewNickname] = useState('')
   const [newRealName, setNewRealName] = useState('')
+  const [newStatus, setNewStatus] = useState('재학중')
+  const [newAdmissionDate, setNewAdmissionDate] = useState('')
+  const [newBirthDate, setNewBirthDate] = useState('')
   const [creating, setCreating] = useState(false)
 
   // 수정 모달
   const [editingStudent, setEditingStudent] = useState(null)
   const [editNickname, setEditNickname] = useState('')
   const [editRealName, setEditRealName] = useState('')
+  const [editStatus, setEditStatus] = useState('재학중')
+  const [editAdmissionDate, setEditAdmissionDate] = useState('')
+  const [editBirthDate, setEditBirthDate] = useState('')
   const [savingEdit, setSavingEdit] = useState(false)
 
   // 삭제 모달
@@ -43,19 +74,25 @@ export default function StudentList() {
     fetchStudents()
   }, [])
 
+  // ───────────────── fetch 목록 ─────────────────
   async function fetchStudents() {
     setLoading(true)
     setError('')
     try {
       const res = await apiFetch('/api/students', { method: 'GET' })
 
+      let list = []
       if (Array.isArray(res)) {
-        setStudents(res)
+        list = res
       } else if (Array.isArray(res?.data)) {
-        setStudents(res.data)
+        list = res.data
+      } else if (Array.isArray(res?.items)) {
+        list = res.items
       } else {
         throw new Error('학생 목록 응답 형식이 올바르지 않습니다.')
       }
+
+      setStudents(list)
     } catch (e) {
       console.error(e)
       setError(e.message || '학생 목록을 불러오는 중 오류가 발생했습니다.')
@@ -64,18 +101,25 @@ export default function StudentList() {
     }
   }
 
-  // 신규 학생 추가
+  // ───────────────── 신규 학생 추가 ─────────────────
   async function handleCreate(e) {
     e.preventDefault()
-    if (!newNickname.trim() || !newRealName.trim()) return
+    if (!newRealName.trim()) {
+      alert('학생 본명을 입력해 주세요.')
+      return
+    }
 
     setCreating(true)
     setError('')
 
     try {
       const body = {
-        nickname: newNickname.trim(),
-        realName: newRealName.trim(),
+        // supabase 컬럼명에 맞춤
+        name: newRealName.trim(), // 본명
+        notes: newNickname.trim(), // 별명
+        status: newStatus || '재학중',
+        admission_date: newAdmissionDate || null,
+        birth_date: newBirthDate || null,
       }
 
       const res = await apiFetch('/api/students', {
@@ -83,14 +127,14 @@ export default function StudentList() {
         body: JSON.stringify(body),
       })
 
-      const created =
-        res?.data && res.data.id
-          ? res.data
-          : res // 공통 래퍼/직접 응답 둘 다 대응
+      const created = res?.data && res.data.id ? res.data : res
 
       setStudents(prev => [...prev, created])
       setNewNickname('')
       setNewRealName('')
+      setNewStatus('재학중')
+      setNewAdmissionDate('')
+      setNewBirthDate('')
     } catch (e) {
       console.error(e)
       setError(e.message || '학생 추가 중 오류가 발생했습니다.')
@@ -99,32 +143,43 @@ export default function StudentList() {
     }
   }
 
-  // 수정 모달 열기
+  // ───────────────── 수정 모달 ─────────────────
   function openEditModal(student) {
     setEditingStudent(student)
-    setEditNickname(student.nickname || '')
-    setEditRealName(student.realName || '')
+    setEditNickname(student.notes || '')
+    setEditRealName(student.name || '')
+    setEditStatus(student.status || '재학중')
+    setEditAdmissionDate(student.admission_date || '')
+    setEditBirthDate(student.birth_date || '')
   }
 
   function closeEditModal() {
     setEditingStudent(null)
     setEditNickname('')
     setEditRealName('')
+    setEditStatus('재학중')
+    setEditAdmissionDate('')
+    setEditBirthDate('')
     setSavingEdit(false)
   }
 
-  // 수정 저장
   async function handleSaveEdit() {
     if (!editingStudent) return
-    if (!editNickname.trim() || !editRealName.trim()) return
+    if (!editRealName.trim()) {
+      alert('학생 본명을 입력해 주세요.')
+      return
+    }
 
     setSavingEdit(true)
     setError('')
 
     try {
       const body = {
-        nickname: editNickname.trim(),
-        realName: editRealName.trim(),
+        name: editRealName.trim(),
+        notes: editNickname.trim(),
+        status: editStatus || '재학중',
+        admission_date: editAdmissionDate || null,
+        birth_date: editBirthDate || null,
       }
 
       const res = await apiFetch(`/api/students/${editingStudent.id}`, {
@@ -133,12 +188,10 @@ export default function StudentList() {
       })
 
       const updated =
-        res?.data && res.data.id
-          ? res.data
-          : { ...editingStudent, ...body }
+        res?.data && res.data.id ? res.data : { ...editingStudent, ...body }
 
       setStudents(prev =>
-        prev.map(s => (s.id === editingStudent.id ? updated : s))
+        prev.map(s => (s.id === editingStudent.id ? updated : s)),
       )
       closeEditModal()
     } catch (e) {
@@ -148,7 +201,7 @@ export default function StudentList() {
     }
   }
 
-  // 삭제 모달 열기/닫기
+  // ───────────────── 삭제 모달 ─────────────────
   function openDeleteModal(student) {
     setDeletingStudent(student)
   }
@@ -158,7 +211,6 @@ export default function StudentList() {
     setDeleting(false)
   }
 
-  // 삭제 확정
   async function handleConfirmDelete() {
     if (!deletingStudent) return
     setDeleting(true)
@@ -179,19 +231,17 @@ export default function StudentList() {
 
   const studentCount = students.length
 
+  // ───────────────── 렌더 ─────────────────
   return (
     <Layout title="관리자">
-      {/* 페이지 제목 아래 본문 영역 */}
       <div className="report-page">
         <div className="report-header">
-          {/* Layout에서 이미 h1.page-title 로 "관리자" 보여주므로
-              여기서는 부제목만 표시 */}
           <p className="muted" style={{ fontSize: 13, marginTop: 4 }}>
             학생 정보를 관리하세요
           </p>
         </div>
 
-        {/* 에러 메시지 */}
+        {/* 에러 */}
         {error && (
           <div
             style={{
@@ -239,12 +289,12 @@ export default function StudentList() {
             onSubmit={handleCreate}
             style={{
               display: 'grid',
-              gridTemplateColumns: '1.1fr 1.1fr auto',
+              gridTemplateColumns: '1.1fr 1.1fr 0.9fr 0.9fr auto',
               gap: 16,
               alignItems: 'flex-end',
             }}
           >
-            {/* 학생 별명 */}
+            {/* 별명 */}
             <div>
               <label
                 style={{
@@ -258,7 +308,7 @@ export default function StudentList() {
               </label>
               <input
                 type="text"
-                placeholder="예: 개미, 씽씽"
+                placeholder="예: 배짱"
                 value={newNickname}
                 onChange={e => setNewNickname(e.target.value)}
                 style={{
@@ -272,7 +322,7 @@ export default function StudentList() {
               />
             </div>
 
-            {/* 학생 본명 */}
+            {/* 본명 */}
             <div>
               <label
                 style={{
@@ -286,7 +336,7 @@ export default function StudentList() {
               </label>
               <input
                 type="text"
-                placeholder="예: 김철수, 박영희"
+                placeholder="예: 김배짱"
                 value={newRealName}
                 onChange={e => setNewRealName(e.target.value)}
                 style={{
@@ -300,7 +350,67 @@ export default function StudentList() {
               />
             </div>
 
-            {/* 추가 버튼 */}
+            {/* 상태 */}
+            <div>
+              <label
+                style={{
+                  display: 'block',
+                  fontSize: 13,
+                  marginBottom: 6,
+                  color: '#111827',
+                }}
+              >
+                상태
+              </label>
+              <select
+                value={newStatus}
+                onChange={e => setNewStatus(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '14px 18px',
+                  borderRadius: 16,
+                  border: '1px solid transparent',
+                  background: '#f3f4f6',
+                  fontSize: 14,
+                  appearance: 'none',
+                }}
+              >
+                {STATUS_OPTIONS.map(opt => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* 입학일 */}
+            <div>
+              <label
+                style={{
+                  display: 'block',
+                  fontSize: 13,
+                  marginBottom: 6,
+                  color: '#111827',
+                }}
+              >
+                입학일
+              </label>
+              <input
+                type="date"
+                value={newAdmissionDate}
+                onChange={e => setNewAdmissionDate(e.target.value)}
+                style={{
+                  width: '70%',
+                  padding: '12px 14px',
+                  borderRadius: 16,
+                  border: '1px solid transparent',
+                  background: '#f3f4f6',
+                  fontSize: 14,
+                }}
+              />
+            </div>
+
+            {/* 추가 버튼 (생년월일은 수정 모달에서도 입력 가능하도록 옵션) */}
             <div
               style={{
                 display: 'flex',
@@ -358,7 +468,7 @@ export default function StudentList() {
             </div>
           </div>
 
-          {/* 헤더 row */}
+          {/* 헤더 */}
           <div
             style={{
               display: 'grid',
@@ -383,8 +493,12 @@ export default function StudentList() {
             </div>
           ) : (
             students.map((s, index) => {
-              const initial = (s.nickname || s.realName || '?').charAt(0)
+              const label = formatStudentLabel(s)
+              const initial = label.charAt(0)
               const isEven = (index + 1) % 2 === 0
+              const admission = s.admission_date || ''
+              const status = s.status || '재학중'
+
               return (
                 <div
                   key={s.id}
@@ -425,8 +539,13 @@ export default function StudentList() {
                       {initial}
                     </div>
                     <div>
-                      <div>
-                        {s.nickname}({s.realName})
+                      <div>{label}</div>
+                      <div
+                        className="muted"
+                        style={{ fontSize: 12, marginTop: 2 }}
+                      >
+                        {status}
+                        {admission && ` · 입학일 ${admission}`}
                       </div>
                     </div>
                   </div>
@@ -493,13 +612,13 @@ export default function StudentList() {
         </section>
       </div>
 
-      {/* ───── 수정 모달 ───── */}
+      {/* 수정 모달 */}
       {editingStudent && (
         <div className="modal-backdrop">
           <div className="modal-card" style={{ maxWidth: 520 }}>
             <h3>학생 정보 수정</h3>
             <p className="muted" style={{ fontSize: 13, marginBottom: 18 }}>
-              학생의 본명과 별명을 수정할 수 있습니다
+              학생의 본명, 별명 및 상태를 수정할 수 있습니다
             </p>
 
             <div className="modal-form">
@@ -519,6 +638,41 @@ export default function StudentList() {
                   type="text"
                   value={editRealName}
                   onChange={e => setEditRealName(e.target.value)}
+                  style={{ marginTop: 4 }}
+                />
+              </label>
+
+              <label>
+                상태
+                <select
+                  value={editStatus}
+                  onChange={e => setEditStatus(e.target.value)}
+                  style={{ marginTop: 4 }}
+                >
+                  {STATUS_OPTIONS.map(opt => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                입학일
+                <input
+                  type="date"
+                  value={editAdmissionDate || ''}
+                  onChange={e => setEditAdmissionDate(e.target.value)}
+                  style={{ marginTop: 4 }}
+                />
+              </label>
+
+              <label>
+                생년월일
+                <input
+                  type="date"
+                  value={editBirthDate || ''}
+                  onChange={e => setEditBirthDate(e.target.value)}
                   style={{ marginTop: 4 }}
                 />
               </label>
@@ -546,7 +700,7 @@ export default function StudentList() {
         </div>
       )}
 
-      {/* ───── 삭제 확인 모달 ───── */}
+      {/* 삭제 확인 모달 */}
       {deletingStudent && (
         <div className="modal-backdrop">
           <div
@@ -561,10 +715,8 @@ export default function StudentList() {
               className="muted"
               style={{ fontSize: 13, marginBottom: 18, marginTop: 8 }}
             >
-              <strong>
-                {deletingStudent.nickname}({deletingStudent.realName})
-              </strong>{' '}
-              학생을 삭제하면 모든 관련 데이터가 제거됩니다. 이 작업은 되돌릴 수
+              <strong>{formatStudentLabel(deletingStudent)}</strong> 학생을
+              삭제하면 모든 관련 데이터가 제거됩니다. 이 작업은 되돌릴 수
               없습니다.
             </p>
 
@@ -593,3 +745,5 @@ export default function StudentList() {
     </Layout>
   )
 }
+
+export { StudentList }

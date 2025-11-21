@@ -3,31 +3,33 @@ import React, { useEffect, useState, useMemo } from 'react'
 import Layout from '../components/Layout'
 import { apiFetch } from '../lib/api.js'
 import {
-  PieChart,
-  Pie,
-  Cell,
-  Tooltip,
   BarChart,
   Bar,
   XAxis,
   YAxis,
   CartesianGrid,
+  Tooltip,
 } from 'recharts'
 
-// (선택) 감정 색상 팔레트 – 필요시 사용
-const EMOTION_COLORS = ['#10b981', '#ef4444', '#f59e0b']
-
 export default function Dashboard() {
-  // 🔹 학생 목록 (supabase 기준)
+  // 🔹 학생 목록 (supabase)
   const [students, setStudents] = useState([])
-  const [selectedStudentId, setSelectedStudentId] = useState('')
+  const [selectedStudentId, setSelectedStudentId] = useState('') // 처음엔 아무 학생도 선택 X
 
-  // 🔹 기간 필터
+  // 🔹 기간 필터 (사용자가 직접 선택)
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
 
-  // 🔹 대시보드 데이터 (supabase -> /api/dashboard)
-  const [metrics, setMetrics] = useState(null)
+  // 🔹 실제로 조회된 조건(학생/기간)을 별도 저장
+  const [queriedStudent, setQueriedStudent] = useState(null)
+  const [queriedStartDate, setQueriedStartDate] = useState('')
+  const [queriedEndDate, setQueriedEndDate] = useState('')
+
+  // 🔹 대시보드 데이터
+  const [metrics, setMetrics] = useState({
+    recordCount: 0,
+    positivePercent: 0,
+  })
   const [emotionData, setEmotionData] = useState([])
   const [activitySeries, setActivitySeries] = useState([])
   const [activityAbilityList, setActivityAbilityList] = useState([])
@@ -36,21 +38,19 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
-  // 🔹 상세 모달
+  // 🔹 모달
   const [emotionModalOpen, setEmotionModalOpen] = useState(false)
   const [activityModalOpen, setActivityModalOpen] = useState(false)
 
-  // 🔹 시작일 > 종료일인지 여부 (검증용)
+  // 🔹 유효성 검사
   const isInvalidRange = startDate && endDate && startDate > endDate
 
-  // 🔹 요약 숫자 (null일 때 0으로)
   const recordCount = metrics?.recordCount ?? 0
   const positivePercent = metrics?.positivePercent ?? 0
 
-  // 🔹 Emotion 차트용 원본 데이터
   const emotionChartData = Array.isArray(emotionData) ? emotionData : []
 
-  // 🔹 감정 점수(0~10 스케일)로 변환 + Top5 리스트
+  // 🔹 감정 점수(0~10 스케일)로 변환 + Top5
   const emotionScaleItems = useMemo(() => {
     if (!emotionChartData.length) return []
     const base = emotionChartData.slice(0, 5)
@@ -61,29 +61,26 @@ export default function Dashboard() {
         0,
         Math.min(10, Math.round(scoreFromPercent * 10) / 10),
       )
-      return {
-        ...item,
-        score10,
-      }
+      return { ...item, score10 }
     })
   }, [emotionChartData])
 
-  // 🔹 활동 그래프 데이터
   const seriesData = Array.isArray(activitySeries) ? activitySeries : []
-
-  // 🔹 활동별 능력 리스트
   const abilityList = Array.isArray(activityAbilityList)
     ? activityAbilityList
     : []
 
-  // 🔹 학생 이름 표시용
   const selectedStudent = useMemo(
     () => students.find(s => s.id === selectedStudentId),
     [students, selectedStudentId],
   )
-  const selectedStudentLabel = selectedStudent?.name || '해당'
 
-  // 🔹 감정 상세 모달용 행 데이터 (비율/횟수/간단 설명)
+  const queriedStudentLabel =
+    queriedStudent?.name ||
+    selectedStudent?.name ||
+    (selectedStudentId ? '선택된 학생' : '해당')
+
+  // 🔹 감정 상세 모달용 보조 데이터
   const emotionDetailRows = useMemo(() => {
     if (!emotionChartData.length) return []
     const baseCount = recordCount || 100
@@ -92,31 +89,19 @@ export default function Dashboard() {
       const ratio = item?.value ?? 0
       const count = Math.round((ratio / 100) * baseCount)
       let desc = ''
+      if (item.name?.includes('긍정')) desc = '기쁨, 만족, 뿌듯함, 즐거움 등'
+      else if (item.name?.includes('부정'))
+        desc = '걱정, 불안, 당황, 짜증 등'
+      else desc = '평온, 집중, 관찰 등'
 
-      if (item.name?.includes('긍정')) {
-        desc = '기쁨, 만족, 뿌듯함, 즐거움 등'
-      } else if (item.name?.includes('부정')) {
-        desc = '걱정, 불안, 당황 등'
-      } else {
-        desc = '평온, 집중, 관찰 등'
-      }
-
-      return {
-        type: item.name,
-        ratio,
-        count,
-        desc,
-      }
+      return { type: item.name, ratio, count, desc }
     })
   }, [emotionChartData, recordCount])
 
-  // 🔹 활동별 대표 감정 카드 (메인 카드 하단 + 상세 모달에서 사용)
   const activityEmotionCards = useMemo(() => {
     if (!abilityList.length || !emotionScaleItems.length) return []
-
     const baseEmotions = emotionScaleItems
     const icons = ['🧺', '🌱', '🧹', '🔍']
-
     return abilityList.slice(0, 4).map((act, idx) => {
       const emo = baseEmotions[idx % baseEmotions.length]
       return {
@@ -130,33 +115,31 @@ export default function Dashboard() {
     })
   }, [abilityList, emotionScaleItems])
 
-  // 🔹 감정 상세 모달용 요약 문장
   const emotionSummaryText = useMemo(() => {
     if (!emotionScaleItems.length) {
-      return `${selectedStudentLabel} 학생의 감정 데이터가 아직 충분하지 않습니다.`
+      return `${queriedStudentLabel} 학생의 감정 데이터가 아직 충분하지 않습니다.`
     }
     const positiveItem = emotionScaleItems[0]
     const pos = positiveItem?.score10 ?? positivePercent / 10
-    return `${selectedStudentLabel} 학생은 선택한 기간 동안 전반적으로 긍정적인 감정을 많이 경험했습니다. 특히 평균 감정 강도는 약 ${pos.toFixed(
+    return `${queriedStudentLabel} 학생은 선택한 기간 동안 전반적으로 긍정적인 감정을 많이 경험했습니다. 특히 평균 감정 강도는 약 ${pos.toFixed(
       1,
     )}/10 수준으로, 안정적인 정서 상태가 유지되고 있습니다.`
-  }, [emotionScaleItems, positivePercent, selectedStudentLabel])
+  }, [emotionScaleItems, positivePercent, queriedStudentLabel])
 
-  // 🔹 활동별 감정 분석 요약 문장
   const activityEmotionSummaryText = useMemo(() => {
     if (!activityEmotionCards.length) {
-      return `${selectedStudentLabel} 학생의 활동별 감정 데이터가 아직 충분하지 않습니다.`
+      return `${queriedStudentLabel} 학생의 활동별 감정 데이터가 아직 충분하지 않습니다.`
     }
     const sorted = [...activityEmotionCards].sort(
       (a, b) => b.score10 - a.score10,
     )
     const best = sorted[0]
-    return `${selectedStudentLabel} 학생은 특히 「${best.activity}」 활동에서 ${best.emotion} 감정을 가장 강하게 느꼈습니다(강도 약 ${best.score10.toFixed(
+    return `${queriedStudentLabel} 학생은 특히 「${best.activity}」 활동에서 ${best.emotion} 감정을 가장 강하게 느꼈습니다(강도 약 ${best.score10.toFixed(
       1,
     )}/10). 수확·관리·관찰 등 다양한 활동에서 전반적으로 긍정적인 감정이 고르게 나타나고 있습니다.`
-  }, [activityEmotionCards, selectedStudentLabel])
+  }, [activityEmotionCards, queriedStudentLabel])
 
-  // 🔹 supabase 기반 학생 목록 불러오기
+  // 🔹 학생 목록 가져오기 (supabase)
   async function fetchStudents() {
     try {
       setError(null)
@@ -165,12 +148,11 @@ export default function Dashboard() {
       })
 
       let list = []
-      if (res && Array.isArray(res.items)) {
-        list = res.items
-      } else if (Array.isArray(res)) {
-        list = res
-      }
+      if (res && Array.isArray(res.items)) list = res.items
+      else if (Array.isArray(res)) list = res
 
+      // supabase 쿼리가 같은 학생을 여러 번 반환해도
+      // 👉 id 기준으로 한 번만 나오도록 dedupe
       const normalized = (list || [])
         .map(item => {
           const id =
@@ -185,19 +167,22 @@ export default function Dashboard() {
             item.full_name ??
             item.display_name ??
             '이름 없음'
-          return id
-            ? {
-                id: String(id),
-                name,
-              }
-            : null
+          return id ? { id: String(id), name } : null
         })
         .filter(Boolean)
 
-      setStudents(normalized)
+      const seen = new Set()
+      const unique = []
+      for (const s of normalized) {
+        if (!seen.has(s.id)) {
+          seen.add(s.id)
+          unique.push(s)
+        }
+      }
 
-      // 처음 진입 시, 첫 학생 자동 선택
-      setSelectedStudentId(prev => prev || normalized[0]?.id || '')
+      setStudents(unique)
+      // ❌ 자동으로 첫 번째 학생 선택하지 않음
+      //    사용자가 직접 클릭해서 선택해야 함
     } catch (e) {
       console.error(e)
       setError('학생 목록을 불러오는 중 오류가 발생했습니다.')
@@ -206,9 +191,9 @@ export default function Dashboard() {
     }
   }
 
-  // 🔹 supabase 기반 대시보드 데이터 불러오기
-  async function fetchDashboardData({ studentId, from, to }) {
-    if (!studentId) return
+  // 🔹 특정 학생 + 기간의 대시보드 데이터 가져오기
+  async function fetchDashboardData({ studentId, startDate, endDate }) {
+    if (!studentId || !startDate || !endDate) return
 
     setLoading(true)
     setError(null)
@@ -216,28 +201,28 @@ export default function Dashboard() {
     try {
       const params = new URLSearchParams()
       params.set('studentId', studentId)
-      if (from) params.set('from', from)
-      if (to) params.set('to', to)
+      params.set('startDate', startDate)
+      params.set('endDate', endDate)
 
+      // 백엔드: 이 파라미터로 supabase에서 조회
       const res = await apiFetch(`/api/dashboard?${params.toString()}`)
 
-      if (!res) {
-        throw new Error('대시보드 데이터를 불러오지 못했습니다.')
-      }
+      if (!res) throw new Error('대시보드 데이터를 불러오지 못했습니다.')
 
-      // metrics: { recordCount, positivePercent, ... }
       setMetrics({
         recordCount: res.metrics?.recordCount ?? 0,
         positivePercent: res.metrics?.positivePercent ?? 0,
       })
 
-      // emotionDistribution: [{ name, value }, ...]
-      setEmotionData(Array.isArray(res.emotionDistribution) ? res.emotionDistribution : [])
+      setEmotionData(
+        Array.isArray(res.emotionDistribution)
+          ? res.emotionDistribution
+          : [],
+      )
+      setActivitySeries(
+        Array.isArray(res.activitySeries) ? res.activitySeries : [],
+      )
 
-      // activitySeries: [{ date, minutes }, ...]
-      setActivitySeries(Array.isArray(res.activitySeries) ? res.activitySeries : [])
-
-      // activityAbilityList: [{ ... }] (supabase 컬럼명 매핑)
       if (Array.isArray(res.activityAbilityList)) {
         setActivityAbilityList(
           res.activityAbilityList.map(item => ({
@@ -257,6 +242,13 @@ export default function Dashboard() {
       } else {
         setActivityAbilityList([])
       }
+
+      // 실제 조회에 사용된 학생/기간 저장
+      const qStudent =
+        students.find(s => s.id === studentId) || selectedStudent || null
+      setQueriedStudent(qStudent)
+      setQueriedStartDate(startDate)
+      setQueriedEndDate(endDate)
     } catch (e) {
       console.error(e)
       setError(e.message || '대시보드 조회 중 오류가 발생했습니다.')
@@ -269,44 +261,35 @@ export default function Dashboard() {
     }
   }
 
-  // 🔹 최초 진입: 학생 목록 먼저 불러오기
+  // 🔹 첫 진입 시: 학생 목록만 가져오기
   useEffect(() => {
     fetchStudents()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // 🔹 학생이 선택되면, 해당 학생 기준으로 기본 대시보드 조회
-  useEffect(() => {
-    if (selectedStudentId) {
-      fetchDashboardData({ studentId: selectedStudentId })
-    } else {
-      // 학생이 선택되지 않은 경우 데이터 초기화
-      setMetrics({ recordCount: 0, positivePercent: 0 })
-      setEmotionData([])
-      setActivitySeries([])
-      setActivityAbilityList([])
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedStudentId])
-
-  // 🔹 검색 버튼
+  // 🔹 검색 버튼 클릭
   function handleSearch(e) {
     e.preventDefault()
-    if (!selectedStudentId) return
-
+    if (!selectedStudentId) {
+      alert('학생을 선택해 주세요.')
+      return
+    }
+    if (!startDate || !endDate) {
+      alert('시작일과 종료일을 모두 선택해 주세요.')
+      return
+    }
     if (isInvalidRange) {
-      alert('시작일이 종료일보다 늦을 수 없습니다. 기간을 다시 선택해주세요.')
+      alert('시작일이 종료일보다 늦을 수 없습니다. 기간을 다시 선택해 주세요.')
       return
     }
 
     fetchDashboardData({
       studentId: selectedStudentId,
-      from: startDate || undefined,
-      to: endDate || undefined,
+      startDate,
+      endDate,
     })
   }
 
-  // 🔹 활동별 능력 분석 요약 박스 카운트
   const excellentCount = abilityList.filter(
     a => a.levelType === 'excellent',
   ).length
@@ -317,442 +300,415 @@ export default function Dashboard() {
 
   return (
     <Layout title="">
-      {/* 메인 컨테이너 */}
       <div className="dashboard-page">
         <div className="dashboard-inner">
-          {loading && !metrics ? (
-            <div style={{ marginTop: 24 }}>로딩 중...</div>
-          ) : (
-            <>
-              {error && (
-                <div className="muted" style={{ marginBottom: 12 }}>
-                  {error}
-                </div>
-              )}
+          {loading && (
+            <div style={{ marginTop: 12 }} className="muted">
+              데이터를 불러오는 중입니다...
+            </div>
+          )}
+          {error && (
+            <div className="muted" style={{ marginTop: 12 }}>
+              {error}
+            </div>
+          )}
 
-              {/* 1) 상단: 학생(왼쪽) + 기간 선택(오른쪽) */}
-              <section className="dashboard-filter-card">
-                <div className="dashboard-filter-grid">
-                  {/* 왼쪽: 학생 정보 패널 */}
-                  <div className="filter-student-panel">
-                    <div className="student-summary-top">
-                      <div className="student-avatar">
-                        {selectedStudent?.name?.charAt(0) ?? '학'}
-                      </div>
-
-                      <div className="student-header-right">
-                        <div className="student-select-row">
-                          <select
-                            className="student-select"
-                            value={selectedStudentId}
-                            onChange={e =>
-                              setSelectedStudentId(e.target.value)
-                            }
-                          >
-                            <option value="">학생 선택</option>
-                            {students.map(s => (
-                              <option key={s.id} value={s.id}>
-                                {s.name}
-                              </option>
-                            ))}
-                          </select>
-
-                          <button
-                            type="button"
-                            className="student-more-btn"
-                            aria-label="학생 설정"
-                          >
-                            👤
-                          </button>
-                        </div>
-
-                        <div className="student-tagline">
-                          {selectedStudent
-                            ? `${selectedStudent.name}님의 최근 기록 요약`
-                            : '학생을 선택하면 최근 기록 요약이 표시됩니다.'}
-                        </div>
-
-                        <div className="student-divider" />
-
-                        <div className="student-metrics-row">
-                          <div className="student-metric">
-                            <div className="metric-number metric-blue">
-                              {recordCount}
-                            </div>
-                            <div className="metric-label">기록 수</div>
-                          </div>
-                          <div className="student-metric">
-                            <div className="metric-number metric-green">
-                              {positivePercent}%
-                            </div>
-                            <div className="metric-label">
-                              긍정 감정 비율
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
+          {/* 상단: 학생 선택 + 기간 선택 */}
+          <section className="dashboard-filter-card">
+            <div className="dashboard-filter-grid">
+              {/* 왼쪽: 학생 패널 */}
+              <div className="filter-student-panel">
+                <div className="student-summary-top">
+                  <div className="student-avatar">
+                    {selectedStudent?.name?.charAt(0) ?? '학'}
                   </div>
 
-                  {/* 오른쪽: 기간 선택 패널 */}
-                  <form
-                    className="filter-calendar-panel"
-                    onSubmit={handleSearch}
-                  >
-                    <div className="calendar-card-header">
-                      <div>
-                        <div className="card-title">기간 선택</div>
-                        <div className="muted" style={{ fontSize: 13 }}>
-                          조회할 날짜 범위를 선택한 뒤 검색을 눌러주세요.
-                        </div>
-                      </div>
-                      <span className="calendar-icon">📅</span>
-                    </div>
-
-                    <div className="calendar-fields">
-                      <div className="calendar-field">
-                        <label>시작일</label>
-                        <input
-                          type="date"
-                          value={startDate}
-                          max={endDate || undefined}
-                          onChange={e => setStartDate(e.target.value)}
-                        />
-                      </div>
-                      <div className="calendar-field">
-                        <label>종료일</label>
-                        <input
-                          type="date"
-                          value={endDate}
-                          min={startDate || undefined}
-                          onChange={e => setEndDate(e.target.value)}
-                        />
-                      </div>
-                    </div>
-
-                    {isInvalidRange && (
-                      <div
-                        className="muted"
-                        style={{
-                          fontSize: 12,
-                          color: '#EF4444',
-                          marginTop: 4,
-                        }}
+                  <div className="student-header-right">
+                    <div className="student-select-row">
+                      <select
+                        className="student-select"
+                        value={selectedStudentId}
+                        onChange={e => setSelectedStudentId(e.target.value)}
                       >
-                        시작일이 종료일보다 늦을 수 없습니다. 날짜를 다시
-                        선택해 주세요.
-                      </div>
-                    )}
+                        <option value="">학생 선택</option>
+                        {students.map(s => (
+                          <option key={s.id} value={s.id}>
+                            {s.name}
+                          </option>
+                        ))}
+                      </select>
 
-                    <div className="calendar-actions">
                       <button
-                        type="submit"
-                        className="btn"
-                        disabled={!selectedStudentId}
+                        type="button"
+                        className="student-more-btn"
+                        aria-label="학생 설정"
                       >
-                        검색
+                        👤
                       </button>
                     </div>
-                  </form>
-                </div>
-              </section>
 
-              {/* 2) 감정 척도 카드 (메인) */}
-              <section className="dashboard-card wide-card emotion-scale-card">
-                <div className="emotion-scale-header">
-                  <div>
-                    <div className="emotion-scale-title">
-                      <span role="img" aria-label="감정">
-                        😺
-                      </span>
-                      <span>감정 척도</span>
+                    <div className="student-tagline">
+                      {queriedStudent
+                        ? `${queriedStudent.name}님의 ${
+                            queriedStartDate && queriedEndDate
+                              ? `${queriedStartDate} ~ ${queriedEndDate}`
+                              : '선택 기간'
+                          } 기록 요약`
+                        : '학생과 기간을 선택한 뒤 검색을 누르면 기록 요약이 표시됩니다.'}
                     </div>
-                    <div className="emotion-scale-subtitle">
-                      선택 기간의 평균 감정 강도 (0~10)
+
+                    <div className="student-divider" />
+
+                    <div className="student-metrics-row">
+                      <div className="student-metric">
+                        <div className="metric-number metric-blue">
+                          {recordCount}
+                        </div>
+                        <div className="metric-label">기록 수</div>
+                      </div>
+                      <div className="student-metric">
+                        <div className="metric-number metric-green">
+                          {positivePercent}%
+                        </div>
+                        <div className="metric-label">긍정 감정 비율</div>
+                      </div>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    className="btn secondary emotion-detail-btn"
-                    onClick={() => setEmotionModalOpen(true)}
-                    disabled={!emotionScaleItems.length}
+                </div>
+              </div>
+
+              {/* 오른쪽: 기간 선택 패널 */}
+              <form
+                className="filter-calendar-panel"
+                onSubmit={handleSearch}
+              >
+                <div className="calendar-card-header">
+                  <div>
+                    <div className="card-title">기간 선택</div>
+                    <div className="muted" style={{ fontSize: 13 }}>
+                      조회할 날짜 범위를 선택한 뒤 검색을 눌러주세요.
+                    </div>
+                  </div>
+                  <span className="calendar-icon">📅</span>
+                </div>
+
+                <div className="calendar-fields">
+                  <div className="calendar-field">
+                    <label>시작일</label>
+                    <input
+                      type="date"
+                      value={startDate}
+                      max={endDate || undefined}
+                      onChange={e => setStartDate(e.target.value)}
+                    />
+                  </div>
+                  <div className="calendar-field">
+                    <label>종료일</label>
+                    <input
+                      type="date"
+                      value={endDate}
+                      min={startDate || undefined}
+                      onChange={e => setEndDate(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                {isInvalidRange && (
+                  <div
+                    className="muted"
+                    style={{
+                      fontSize: 12,
+                      color: '#EF4444',
+                      marginTop: 4,
+                    }}
                   >
-                    상세보기
+                    시작일이 종료일보다 늦을 수 없습니다. 날짜를 다시 선택해
+                    주세요.
+                  </div>
+                )}
+
+                <div className="calendar-actions">
+                  <button
+                    type="submit"
+                    className="btn"
+                    disabled={!selectedStudentId}
+                  >
+                    검색
                   </button>
                 </div>
+              </form>
+            </div>
+          </section>
 
-                {/* 전체 평균 감정 Top5 */}
-                <div className="emotion-scale-section">
-                  <div className="emotion-scale-section-title">
-                    전체 평균 감정 Top 5
-                  </div>
-                  {emotionScaleItems.length === 0 ? (
-                    <div className="muted">
-                      감정 데이터가 아직 없습니다. 업로드/분석 후 다시 확인해
-                      주세요.
-                    </div>
-                  ) : (
-                    <div className="emotion-scale-list">
-                      {emotionScaleItems.map(item => (
-                        <div key={item.name} className="emotion-scale-row">
-                          <div className="emotion-scale-label">
-                            <div className="emotion-name">{item.name}</div>
-                            <div className="emotion-scale-minmax">나쁨</div>
-                          </div>
-                          <div className="emotion-scale-bar-wrap">
-                            <div className="emotion-score-info">
-                              <span className="emotion-score-main">
-                                {item.score10.toFixed(1)}/10
-                              </span>
-                              <span className="emotion-score-state">
-                                좋음
-                              </span>
-                            </div>
-                            <div className="emotion-score-bar">
-                              <div
-                                className="emotion-score-bar-fill"
-                                style={{
-                                  width: `${(item.score10 / 10) * 100}%`,
-                                }}
-                              />
-                            </div>
-                          </div>
+          {/* 감정 척도 카드 */}
+          <section className="dashboard-card wide-card emotion-scale-card">
+            <div className="emotion-scale-header">
+              <div>
+                <div className="emotion-scale-title">
+                  <span role="img" aria-label="감정">
+                    😺
+                  </span>
+                  <span>감정 척도</span>
+                </div>
+                <div className="emotion-scale-subtitle">
+                  선택 기간의 평균 감정 강도 (0~10)
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn secondary emotion-detail-btn"
+                onClick={() => setEmotionModalOpen(true)}
+                disabled={!emotionScaleItems.length}
+              >
+                상세보기
+              </button>
+            </div>
+
+            <div className="emotion-scale-section">
+              <div className="emotion-scale-section-title">
+                전체 평균 감정 Top 5
+              </div>
+              {emotionScaleItems.length === 0 ? (
+                <div className="muted">
+                  감정 데이터가 아직 없습니다. 학생과 기간을 선택해 검색해
+                  주세요.
+                </div>
+              ) : (
+                <div className="emotion-scale-list">
+                  {emotionScaleItems.map(item => (
+                    <div key={item.name} className="emotion-scale-row">
+                      <div className="emotion-scale-label">
+                        <div className="emotion-name">{item.name}</div>
+                        <div className="emotion-scale-minmax">나쁨</div>
+                      </div>
+                      <div className="emotion-scale-bar-wrap">
+                        <div className="emotion-score-info">
+                          <span className="emotion-score-main">
+                            {item.score10.toFixed(1)}/10
+                          </span>
+                          <span className="emotion-score-state">좋음</span>
                         </div>
+                        <div className="emotion-score-bar">
+                          <div
+                            className="emotion-score-bar-fill"
+                            style={{
+                              width: `${(item.score10 / 10) * 100}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* 활동별 대표 감정 */}
+            <div className="activity-emotion-section">
+              <div className="activity-emotion-header">
+                활동별 대표 감정
+              </div>
+              <div className="activity-emotion-grid">
+                {activityEmotionCards.map(card => (
+                  <div key={card.id} className="activity-emotion-card">
+                    <div className="activity-emotion-card-top">
+                      <div className="activity-emotion-icon">
+                        {card.icon}
+                      </div>
+                      <div>
+                        <div className="activity-emotion-activity">
+                          {card.activity}
+                        </div>
+                        {card.description && (
+                          <div className="activity-emotion-sub muted">
+                            {card.description}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="activity-emotion-body">
+                      <div className="activity-emotion-row">
+                        <span className="activity-emotion-label">
+                          {card.emotion}
+                        </span>
+                        <span className="activity-emotion-score">
+                          {card.score10.toFixed(1)}/10
+                        </span>
+                      </div>
+                      <div className="activity-emotion-bar">
+                        <div
+                          className="activity-emotion-bar-fill"
+                          style={{
+                            width: `${(card.score10 / 10) * 100}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {!activityEmotionCards.length && (
+                  <div className="activity-emotion-empty muted">
+                    선택한 기간에 활동 데이터가 없습니다.
+                  </div>
+                )}
+              </div>
+            </div>
+          </section>
+
+          {/* 활동 유형 분포 */}
+          <section className="dashboard-card wide-card">
+            <div className="activity-card-header">
+              <div>
+                <div className="card-title">활동 유형 분포</div>
+                <div className="muted" style={{ fontSize: 13 }}>
+                  선택한 기간 동안 기록된 활동 시간을 날짜별로 살펴볼 수 있어요.
+                </div>
+              </div>
+            </div>
+
+            <div className="activity-chart-wrapper">
+              {seriesData.length === 0 ? (
+                <div className="muted">
+                  활동 기록이 없습니다. 학생과 기간을 선택해 검색해 주세요.
+                </div>
+              ) : (
+                <BarChart
+                  width={720}
+                  height={260}
+                  data={seriesData}
+                  margin={{ top: 16, right: 16, left: 0, bottom: 8 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="date" />
+                  <YAxis unit="분" />
+                  <Tooltip
+                    formatter={value => [`${value}분`, '활동 시간']}
+                  />
+                  <Bar
+                    dataKey="minutes"
+                    fill="#3b82f6"
+                    radius={[4, 4, 0, 0]}
+                  />
+                </BarChart>
+              )}
+            </div>
+          </section>
+
+          {/* 활동별 능력 분석 */}
+          <section className="dashboard-card wide-card">
+            <div className="card-title">활동별 능력 분석</div>
+            <div
+              className="muted"
+              style={{ fontSize: 13, marginBottom: 16 }}
+            >
+              각 활동에서 나타나는 능력 수행 수준과 상세 분석
+            </div>
+
+            <div className="activity-ability-table">
+              <div className="ability-table-header">
+                <div className="col-activity">활동</div>
+                <div className="col-level">수행 수준</div>
+                <div className="col-distribution">능력 분포</div>
+                <div className="col-score">종합 점수</div>
+                <div className="col-main-skills">주요 능력</div>
+              </div>
+
+              {abilityList.length === 0 ? (
+                <div className="activity-detail-empty">
+                  활동별 능력 데이터가 없습니다.
+                </div>
+              ) : (
+                abilityList.map(item => (
+                  <div key={item.id} className="ability-table-row">
+                    <div className="col-activity">
+                      <div className="activity-name">{item.activity}</div>
+                      <div className="activity-date muted">
+                        {item.date}
+                      </div>
+                    </div>
+
+                    <div className="col-level">
+                      <span
+                        className={
+                          'level-badge ' +
+                          (item.levelType === 'excellent'
+                            ? 'level-excellent'
+                            : item.levelType === 'challenge'
+                            ? 'level-challenge'
+                            : 'level-good')
+                        }
+                      >
+                        {item.levelLabel}
+                      </span>
+                    </div>
+
+                    <div className="col-distribution">
+                      <div className="ability-bar">
+                        <span
+                          className="bar-seg bar-hard"
+                          style={{ width: `${item.difficultyRatio}%` }}
+                        />
+                        <span
+                          className="bar-seg bar-normal"
+                          style={{ width: `${item.normalRatio}%` }}
+                        />
+                        <span
+                          className="bar-seg bar-good"
+                          style={{ width: `${item.goodRatio}%` }}
+                        />
+                      </div>
+                      <div className="ability-bar-labels">
+                        <span>어려움 {item.difficultyRatio}%</span>
+                        <span>보통 {item.normalRatio}%</span>
+                        <span>잘함 {item.goodRatio}%</span>
+                      </div>
+                    </div>
+
+                    <div className="col-score">
+                      <div className="score-main">
+                        {item.totalScore}점
+                      </div>
+                      <div className="muted">{item.hours}</div>
+                    </div>
+
+                    <div className="col-main-skills">
+                      {item.mainSkills?.map(skill => (
+                        <span key={skill} className="skill-chip">
+                          {skill}
+                        </span>
                       ))}
                     </div>
-                  )}
-                </div>
-
-                {/* 활동별 대표 감정 */}
-                <div className="activity-emotion-section">
-                  <div className="activity-emotion-header">
-                    활동별 대표 감정
                   </div>
-                  <div className="activity-emotion-grid">
-                    {activityEmotionCards.map(card => (
-                      <div key={card.id} className="activity-emotion-card">
-                        <div className="activity-emotion-card-top">
-                          <div className="activity-emotion-icon">
-                            {card.icon}
-                          </div>
-                          <div>
-                            <div className="activity-emotion-activity">
-                              {card.activity}
-                            </div>
-                            {card.description && (
-                              <div className="activity-emotion-sub muted">
-                                {card.description}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                        <div className="activity-emotion-body">
-                          <div className="activity-emotion-row">
-                            <span className="activity-emotion-label">
-                              {card.emotion}
-                            </span>
-                            <span className="activity-emotion-score">
-                              {card.score10.toFixed(1)}/10
-                            </span>
-                          </div>
-                          <div className="activity-emotion-bar">
-                            <div
-                              className="activity-emotion-bar-fill"
-                              style={{
-                                width: `${(card.score10 / 10) * 100}%`,
-                              }}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                    {!activityEmotionCards.length && (
-                      <div className="activity-emotion-empty muted">
-                        선택한 기간에 활동 데이터가 없습니다.
-                      </div>
-                    )}
-                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="ability-summary-grid">
+              <div className="ability-summary-card summary-excellent">
+                <div className="summary-title">매우 우수 활동</div>
+                <div className="summary-main">{excellentCount}개</div>
+                <div className="summary-sub">
+                  빠르고 효율적으로 수행한 활동
                 </div>
-              </section>
-
-              {/* 3) 활동 유형 분포 (막대 그래프) */}
-              <section className="dashboard-card wide-card">
-                <div className="activity-card-header">
-                  <div>
-                    <div className="card-title">활동 유형 분포</div>
-                    <div className="muted" style={{ fontSize: 13 }}>
-                      선택한 기간 동안 기록된 활동 시간을 날짜별로 살펴볼 수
-                      있어요.
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    className="btn secondary emotion-detail-btn"
-                    onClick={() => setActivityModalOpen(true)}
-                    disabled={!activityEmotionCards.length}
-                  >
-                    상세보기
-                  </button>
+              </div>
+              <div className="ability-summary-card summary-good">
+                <div className="summary-title">우수 활동</div>
+                <div className="summary-main">{goodCount}개</div>
+                <div className="summary-sub">안정적으로 수행한 활동</div>
+              </div>
+              <div className="ability-summary-card summary-challenge">
+                <div className="summary-title">도전적 활동</div>
+                <div className="summary-main">{challengeCount}개</div>
+                <div className="summary-sub">
+                  추가적인 지원이 필요한 활동
                 </div>
-
-                <div className="activity-chart-wrapper">
-                  {seriesData.length === 0 ? (
-                    <div className="muted">
-                      활동 기록이 없습니다. 업로드/분석 후 다시 확인해 주세요.
-                    </div>
-                  ) : (
-                    <BarChart
-                      width={720}
-                      height={260}
-                      data={seriesData}
-                      margin={{ top: 16, right: 16, left: 0, bottom: 8 }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="date" />
-                      <YAxis unit="분" />
-                      <Tooltip
-                        formatter={value => [`${value}분`, '활동 시간']}
-                      />
-                      <Bar
-                        dataKey="minutes"
-                        fill="#3b82f6"
-                        radius={[4, 4, 0, 0]}
-                      />
-                    </BarChart>
-                  )}
-                </div>
-              </section>
-
-              {/* 4) 활동별 능력 분석 */}
-              <section className="dashboard-card wide-card">
-                <div className="card-title">활동별 능력 분석</div>
-                <div
-                  className="muted"
-                  style={{ fontSize: 13, marginBottom: 16 }}
-                >
-                  각 활동에서 나타나는 능력 수행 수준과 상세 분석
-                </div>
-
-                <div className="activity-ability-table">
-                  <div className="ability-table-header">
-                    <div className="col-activity">활동</div>
-                    <div className="col-level">수행 수준</div>
-                    <div className="col-distribution">능력 분포</div>
-                    <div className="col-score">종합 점수</div>
-                    <div className="col-main-skills">주요 능력</div>
-                  </div>
-
-                  {abilityList.length === 0 ? (
-                    <div className="activity-detail-empty">
-                      활동별 능력 데이터가 없습니다.
-                    </div>
-                  ) : (
-                    abilityList.map(item => (
-                      <div key={item.id} className="ability-table-row">
-                        <div className="col-activity">
-                          <div className="activity-name">
-                            {item.activity}
-                          </div>
-                          <div className="activity-date muted">
-                            {item.date}
-                          </div>
-                        </div>
-
-                        <div className="col-level">
-                          <span
-                            className={
-                              'level-badge ' +
-                              (item.levelType === 'excellent'
-                                ? 'level-excellent'
-                                : item.levelType === 'challenge'
-                                ? 'level-challenge'
-                                : 'level-good')
-                            }
-                          >
-                            {item.levelLabel}
-                          </span>
-                        </div>
-
-                        <div className="col-distribution">
-                          <div className="ability-bar">
-                            <span
-                              className="bar-seg bar-hard"
-                              style={{
-                                width: `${item.difficultyRatio}%`,
-                              }}
-                            />
-                            <span
-                              className="bar-seg bar-normal"
-                              style={{
-                                width: `${item.normalRatio}%`,
-                              }}
-                            />
-                            <span
-                              className="bar-seg bar-good"
-                              style={{
-                                width: `${item.goodRatio}%`,
-                              }}
-                            />
-                          </div>
-                          <div className="ability-bar-labels">
-                            <span>어려움 {item.difficultyRatio}%</span>
-                            <span>보통 {item.normalRatio}%</span>
-                            <span>잘함 {item.goodRatio}%</span>
-                          </div>
-                        </div>
-
-                        <div className="col-score">
-                          <div className="score-main">
-                            {item.totalScore}점
-                          </div>
-                          <div className="muted">{item.hours}</div>
-                        </div>
-
-                        <div className="col-main-skills">
-                          {item.mainSkills?.map(skill => (
-                            <span key={skill} className="skill-chip">
-                              {skill}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-
-                {/* 하단 3개 요약 카드 (평균 수행 점수 제거) */}
-                <div className="ability-summary-grid">
-                  <div className="ability-summary-card summary-excellent">
-                    <div className="summary-title">매우 우수 활동</div>
-                    <div className="summary-main">{excellentCount}개</div>
-                    <div className="summary-sub">
-                      빠르고 효율적으로 수행한 활동
-                    </div>
-                  </div>
-                  <div className="ability-summary-card summary-good">
-                    <div className="summary-title">우수 활동</div>
-                    <div className="summary-main">{goodCount}개</div>
-                    <div className="summary-sub">
-                      안정적으로 수행한 활동
-                    </div>
-                  </div>
-                  <div className="ability-summary-card summary-challenge">
-                    <div className="summary-title">도전적 활동</div>
-                    <div className="summary-main">
-                      {challengeCount}개
-                    </div>
-                    <div className="summary-sub">
-                      추가적인 지원이 필요한 활동
-                    </div>
-                  </div>
-                </div>
-              </section>
-            </>
-          )}
+              </div>
+            </div>
+          </section>
         </div>
       </div>
 
-      {/* 감정 척도 / 활동별 감정 상세 모달 */}
+      {/* 감정 상세 모달 */}
       {emotionModalOpen && (
         <div
           className="modal-backdrop"
@@ -779,7 +735,7 @@ export default function Dashboard() {
                   🧠 감정 키워드 상세보기
                 </div>
                 <p className="muted">
-                  {selectedStudentLabel} 학생의 선택 기간 감정 키워드와
+                  {queriedStudentLabel} 학생의 선택 기간 감정 키워드와
                   활동별 감정 척도를 한눈에 볼 수 있는 화면입니다.
                 </p>
               </div>
@@ -789,15 +745,12 @@ export default function Dashboard() {
             </div>
 
             <div className="emotion-detail-scroll">
-              {/* 전체 평균 감정 척도 */}
               <section className="emotion-detail-section">
                 <h4 className="emotion-detail-section-title">
                   전체 평균 감정 척도
                 </h4>
                 {emotionScaleItems.length === 0 ? (
-                  <div className="muted">
-                    감정 데이터가 아직 없습니다.
-                  </div>
+                  <div className="muted">감정 데이터가 아직 없습니다.</div>
                 ) : (
                   <div className="emotion-detail-grid">
                     {emotionScaleItems.map(item => {
@@ -849,7 +802,6 @@ export default function Dashboard() {
                 )}
               </section>
 
-              {/* 전체 분석 요약 */}
               <section className="emotion-detail-section">
                 <h4 className="emotion-detail-section-title">
                   전체 분석 요약
@@ -859,7 +811,6 @@ export default function Dashboard() {
                 </div>
               </section>
 
-              {/* 활동별 감정 척도 */}
               <section className="emotion-detail-section">
                 <h4 className="emotion-detail-section-title">
                   활동별 감정 척도
@@ -912,7 +863,6 @@ export default function Dashboard() {
                 )}
               </section>
 
-              {/* 활동별 감정 분석 요약 */}
               <section className="emotion-detail-section">
                 <h4 className="emotion-detail-section-title">
                   활동별 감정 분석
@@ -949,8 +899,8 @@ export default function Dashboard() {
 
             <h3>활동 유형 분포 상세보기</h3>
             <p className="muted">
-              {selectedStudentLabel} 학생의 활동 유형별 수행 수준과 대표
-              감정을 한눈에 볼 수 있는 화면입니다.
+              {queriedStudentLabel} 학생의 활동 유형별 수행 수준과 대표 감정을
+              한눈에 볼 수 있는 화면입니다.
             </p>
 
             <div className="activity-detail-table">
