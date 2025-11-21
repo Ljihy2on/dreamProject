@@ -601,26 +601,25 @@ export default function Report() {
 
                     return (
                       <article key={report.id} className="report-card">
+                        {/* 카드 상단: 아이콘 + 제목/메타 + 상태 뱃지 */}
                         <div className="report-card-header">
                           <div className="report-card-icon-wrap">
                             <div className="report-card-icon">📄</div>
                           </div>
+
                           <div className="report-card-title-block">
-                            <div className="report-card-title">
-                              {report.studentName}
-                            </div>
-                            <div className="report-purpose-badge">
-                              {report.purposeLabel}
-                            </div>
+                            <div className="report-card-title">{report.studentName}</div>
+
+                            <div className="report-purpose-badge">{report.purposeLabel}</div>
+
                             <div className="report-card-meta">
                               <div>{report.periodLabel}</div>
                               <div>{report.categoryLabel}</div>
                             </div>
                           </div>
+
                           <div className="report-card-status">
-                            <span
-                              className={getStatusBadgeClass(report.status)}
-                            >
+                            <span className={getStatusBadgeClass(report.status)}>
                               {getStatusLabel(report.status)}
                             </span>
                           </div>
@@ -628,30 +627,26 @@ export default function Report() {
 
                         {/* 남은 시간 + 진행 바 */}
                         <div className="report-remaining-row">
-                          <span className="muted">
-                            ⏱ 남은 시간: {remaining.label}
-                          </span>
+                          <span className="muted">⏱ 남은 시간: {remaining.label}</span>
                         </div>
                         <div className="report-deadline-progress">
                           <div className="report-deadline-bar">
                             <div
                               className="report-deadline-inner"
-                              style={{
-                                width: `${remaining.percent}%`,
-                              }}
+                              style={{ width: `${remaining.percent}%` }}
                             />
                           </div>
                         </div>
 
+                        {/* 하단: 생성일 + 오른쪽 세로 버튼(상세보기/다운/삭제) */}
                         <div className="report-card-footer">
                           <div className="report-card-footer-left">
                             <span className="muted report-created-at">
                               생성일:{' '}
-                              {report.createdAt
-                                ? report.createdAt.slice(0, 10)
-                                : '-'}
+                              {report.createdAt ? report.createdAt.slice(0, 10) : '-'}
                             </span>
                           </div>
+
                           <div className="report-card-actions report-card-actions-col">
                             <button
                               type="button"
@@ -674,15 +669,15 @@ export default function Report() {
                               onClick={() => handleDelete(report)}
                             >
                               삭제
-                            </button>
+                           </button>
                           </div>
                         </div>
-                      </article>
-                    )
-                  })}
-                </div>
-              </>
-            )}
+                     </article>
+                      )
+                    })}
+                    </div>
+                  </>
+                )}
           </section>
         </div>
       </div>

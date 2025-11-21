@@ -875,10 +875,11 @@ app.get('/api/dashboard', async (req, res) => {
   }
 })
 
-// -------------------- 리포트 실행 이력 API (/api/report-runs) --------------------
+// -------------------- 리포트 실행 이력 API (/api/report-runs, /report-runs) --------------------
 // (Report.jsx 에서 사용)
 
-app.get('/api/report-runs', async (req, res) => {
+// 목록 조회: GET /report-runs 또는 /api/report-runs
+app.get(['/report-runs', '/api/report-runs'], async (req, res) => {
   const { limit = 50, offset = 0 } = req.query
 
   try {
@@ -893,19 +894,21 @@ app.get('/api/report-runs', async (req, res) => {
       return res.status(500).json({ message: 'DB Error', error })
     }
 
+    // ⚠️ Report.jsx 가 data.runs 를 우선 사용하므로 여기에 맞춰줌
     res.json({
+      runs: data || [],
       count,
-      items: data || [],
     })
   } catch (e) {
-    console.error('GET /api/report-runs 에러:', e)
+    console.error('GET /report-runs 에러:', e)
     res
       .status(500)
       .json({ message: 'Report runs Error', error: e.toString() })
   }
 })
 
-app.get('/api/report-runs/:id', async (req, res) => {
+// 단건 조회: GET /report-runs/:id 또는 /api/report-runs/:id
+app.get(['/report-runs/:id', '/api/report-runs/:id'], async (req, res) => {
   const { id } = req.params
 
   try {
@@ -917,19 +920,22 @@ app.get('/api/report-runs/:id', async (req, res) => {
 
     if (error || !data) {
       console.error('report_runs 상세 조회 에러:', error)
-      return res.status(404).json({ message: '리포트를 찾을 수 없습니다.', error })
+      return res
+        .status(404)
+        .json({ message: '리포트를 찾을 수 없습니다.', error })
     }
 
     res.json(data)
   } catch (e) {
-    console.error('GET /api/report-runs/:id 에러:', e)
+    console.error('GET /report-runs/:id 에러:', e)
     res
       .status(500)
       .json({ message: 'Report runs Error', error: e.toString() })
   }
 })
 
-app.post('/api/report-runs', async (req, res) => {
+// 생성: POST /report-runs 또는 /api/report-runs
+app.post(['/report-runs', '/api/report-runs'], async (req, res) => {
   const { title, description, filters } = req.body || {}
 
   if (!title) {
@@ -960,46 +966,81 @@ app.post('/api/report-runs', async (req, res) => {
 
     res.status(201).json(data)
   } catch (e) {
-    console.error('POST /api/report-runs 에러:', e)
+    console.error('POST /report-runs 에러:', e)
     res
       .status(500)
       .json({ message: 'Report create Error', error: e.toString() })
   }
 })
 
-app.get('/api/report-runs/:id/download', async (req, res) => {
-  const { id } = req.params
+// 삭제: DELETE /report-runs/:id 또는 /api/report-runs/:id
+// (Report.jsx handleDelete 에서 사용)
+app.delete(
+  ['/report-runs/:id', '/api/report-runs/:id'],
+  async (req, res) => {
+    const { id } = req.params
 
-  try {
-    const { data, error } = await supabase
-      .from('report_runs')
-      .select('*')
-      .eq('id', id)
-      .single()
+    try {
+      const { error } = await supabase
+        .from('report_runs')
+        .delete()
+        .eq('id', id)
 
-    if (error || !data) {
-      console.error('report_runs 다운로드 조회 에러:', error)
-      return res.status(404).json({ message: '리포트를 찾을 수 없습니다.', error })
+      if (error) {
+        console.error('report_runs 삭제 에러:', error)
+        return res.status(500).json({ message: 'DB Error', error })
+      }
+
+      res.status(204).send()
+    } catch (e) {
+      console.error('DELETE /report-runs/:id 에러:', e)
+      res
+        .status(500)
+        .json({ message: 'Report delete Error', error: e.toString() })
     }
+  },
+)
 
-    const csvContent = [
-      'title,created_at,status',
-      `"${data.title}",${data.created_at},${data.status}`,
-    ].join('\n')
+// 다운로드: GET /report-runs/:id/download 또는 /api/report-runs/:id/download
+app.get(
+  ['/report-runs/:id/download', '/api/report-runs/:id/download'],
+  async (req, res) => {
+    const { id } = req.params
 
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8')
-    res.setHeader(
-      'Content-Disposition',
-      `attachment; filename="report-${id}.csv"`,
-    )
-    res.send(csvContent)
-  } catch (e) {
-    console.error('GET /report-runs/:id/download 에러:', e)
-    res
-      .status(500)
-      .json({ message: 'Report download error', error: e.toString() })
-  }
-})
+    try {
+      const { data, error } = await supabase
+        .from('report_runs')
+        .select('*')
+        .eq('id', id)
+        .single()
+
+      if (error || !data) {
+        console.error('report_runs 다운로드 조회 에러:', error)
+        return res
+          .status(404)
+          .json({ message: '리포트를 찾을 수 없습니다.', error })
+      }
+
+      // 지금은 CSV로 간단히 응답 (나중에 진짜 PDF로 교체 가능)
+      const csvContent = [
+        'title,created_at,status',
+        `"${data.title}",${data.created_at},${data.status}`,
+      ].join('\n')
+
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="report-${id}.csv"`,
+      )
+      res.send(csvContent)
+    } catch (e) {
+      console.error('GET /report-runs/:id/download 에러:', e)
+      res
+        .status(500)
+        .json({ message: 'Report download error', error: e.toString() })
+    }
+  },
+)
 
 // -------------------- 서버 시작 --------------------
 

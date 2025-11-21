@@ -2,15 +2,102 @@
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap');
 
 :root {
+  /* Design Tokens */
+  --bg-app: #f4f5f7;
+  --bg-white: #ffffff;
+  --text-muted: #6b7280;
+  --color-primary: #4f46e5;
+  --text-main: #0f172a;
+  --bg-button-dark: #1a1a1a;
+  --border-color: #e5e7eb;
+  --bg-input: #f7f8fb;
+  --text-dark: #111827;
+  --bg-card: #f9fafb;
+  --border-card: #edf0f4;
+  --bg-blue-light: #f3f7ff;
+  --border-blue-light: #e3ecff;
+  --bg-orange-light: #fffaf0;
+  --border-orange-light: #ffedd5;
+  --color-blue: #3b82f6;
+  --bg-blue-lighter: #eff6ff;
+  --bg-blue-pale: #dbeafe;
+  --text-blue-dark: #1d4ed8;
+  --bg-red-light: #fee2e2;
+  --text-red-dark: #b91c1c;
+  --color-green: #22c55e;
+  --bg-green-light: #dcfce7;
+  --text-green-dark: #16a34a;
+  --text-red: #dc2626;
+  --color-yellow: #facc15;
+  --bg-sky-light: #e0f2fe;
+  --text-sky-dark: #0369a1;
+  --bg-slate-100: #f1f5f9;
+  --bg-nav-active: #020617;
+  --bg-slate-200: #e2e8f0;
+  --border-green-light: #bbf7d0;
+  --bg-green-pale: #f0fdf4;
+  --border-blue-pale: #bfdbfe;
+  --border-red-light: #fecaca;
+  --bg-red-pale: #fef2f2;
+  --text-gray-light: #d1d5db;
+  --text-gray-medium: #4b5563;
+  --text-gray-lighter: #9ca3af;
+  --color-blue-400: #60a5fa;
+  --color-blue-600: #2563eb;
+  --text-slate-400: #94a3b8;
+  --bg-indigo-light: #f3f4ff;
+  --bg-slate-50: #f8fafc;
+  --text-slate-800: #1e293b;
+  --text-slate-700: #334155;
+  --border-slate-300: #cbd5e1;
+  --text-slate-500: #64748b;
+  --text-slate-600: #475569;
+  --color-indigo-400: #818cf8;
+  --bg-indigo-200: #c7d2fe;
+  --bg-indigo-100: #e0e7ff;
+  --text-indigo-800: #3730a3;
+  --text-indigo-700: #4338ca;
+  --text-violet-800: #5b21b6;
+  --color-violet-600: #7c3aed;
+  --bg-violet-200: #ddd6fe;
+  --bg-violet-100: #ede9fe;
+  --color-violet-500: #8b5cf6;
+  --color-violet-400: #a78bfa;
+  --bg-violet-300: #c4b5fd;
+  --color-teal-400: #2dd4bf;
+  --text-teal-600: #0d9488;
+  --bg-teal-100: #ccfbf1;
+  --bg-teal-200: #99f6e4;
+  --color-amber-300: #fcd34d;
+  --color-amber-400: #fbbf24;
+  --text-amber-500: #f59e0b;
+  --text-amber-600: #d97706;
+  --bg-amber-50: #fffbeb;
+  --bg-amber-100: #fef3c7;
+  --bg-amber-200: #fde68a;
+  --color-rose-400: #fb7185;
+  --color-rose-500: #f43f5e;
+  --text-rose-600: #e11d48;
+  --bg-rose-100: #ffe4e6;
+  --bg-rose-300: #fda4af;
+  --text-neutral-400: #a3a3a3;
+  --text-neutral-600: #525252;
+  --text-neutral-800: #262626;
+  --text-neutral-900: #171717;
+  --bg-neutral-50: #fafafa;
+  --bg-neutral-100: #f5f5f5;
+  --bg-neutral-200: #e5e5e5;
+  --bg-neutral-300: #d4d4d4;
+
   font-family: 'Noto Sans KR', 'Pretendard', 'Spoqa Han Sans Neo', 'Segoe UI', Arial, sans-serif;
 }
 /* ───────── 0. 레이아웃 기본 설정 ───────── */
 
 :root {
-  --bg: #f4f5f7;
-  --card: #ffffff;
-  --muted: #6b7280;
-  --accent: #4f46e5;
+  --bg: var(--bg-app);
+  --card: var(--bg-white);
+  --muted: var(--text-muted);
+  --accent: var(--color-primary);
 }
 
 /* 앱 전체 래퍼 (Layout.jsx에서 .app-root 사용) */
@@ -24,7 +111,7 @@
 body {
   margin: 0;
   background: var(--bg);
-  color: #0f172a;
+  color: var(--text-main);
   font-family: inherit;
   font-weight: 400;
   font-feature-settings: 'ss01' on, 'kern' on;
@@ -39,8 +126,8 @@ button {
   font-family: inherit;
   border-radius: 8px;
   border: 1px solid transparent;
-  background-color: #1a1a1a;
-  color: #ffffff;
+  background-color: var(--bg-button-dark);
+  color: var(--bg-white);
   cursor: pointer;
   transition: border-color 0.25s, background-color 0.25s;
 }
@@ -57,14 +144,14 @@ button:focus-visible {
 @media (prefers-color-scheme: light) {
   :root {
     color: #213547;
-    background-color: #ffffff;
+    background-color: var(--bg-white);
   }
   a:hover {
     color: #747bff;
   }
   button {
     background-color: #f9f9f9;
-    color: #111827;
+    color: var(--text-dark);
   }
 }
 
@@ -99,7 +186,7 @@ button:focus-visible {
 .btn.secondary {
   background: #eef2ff;
   color: var(--accent);
-  border: 1px solid #dbeafe;
+  border: 1px solid var(--bg-blue-pale);
 }
 
 .muted {
@@ -107,7 +194,7 @@ button:focus-visible {
 }
 
 .error {
-  color: #b91c1c;
+  color: var(--text-red-dark);
 }
 
 .search-row {
@@ -126,7 +213,7 @@ button:focus-visible {
 /* ───────── 2. 업로더 & Progress 공통 ───────── */
 
 .uploader {
-  border: 2px dashed #dbeafe;
+  border: 2px dashed var(--bg-blue-pale);
   padding: 18px;
   border-radius: 10px;
   text-align: center;
@@ -138,7 +225,7 @@ button:focus-visible {
   justify-content: space-between;
   gap: 8px;
   padding: 8px;
-  border-bottom: 1px solid #f1f5f9;
+  border-bottom: 1px solid var(--bg-slate-100);
 }
 
 /* 공통 progress bar 기본 형태 */
@@ -146,7 +233,7 @@ button:focus-visible {
   width: 100%;
   height: 6px;
   border-radius: 999px;
-  background: #e5e7eb;
+  background: var(--border-color);
   overflow: hidden;
 }
 
@@ -285,7 +372,7 @@ button:focus-visible {
   width: 800px;
   height : 600px;
   max-width: 92%;
-  background: #ffffff;
+  background: var(--bg-white);
   border-radius: 18px;
   padding: 28px 32px 24px;
   box-shadow: 0 22px 45px rgba(15, 23, 42, 0.35);
@@ -314,7 +401,7 @@ button:focus-visible {
   width: auto;
   height: auto;
   font-size: 18px;
-  color: #6b7280;
+  color: var(--text-muted);
   cursor: pointer;
 }
 
@@ -368,14 +455,14 @@ button:focus-visible {
 }
 
 .modal-actions .btn.secondary {
-  background: #ffffff;
-  color: #111827;
-  border: 1px solid #e5e7eb;
+  background: var(--bg-white);
+  color: var(--text-dark);
+  border: 1px solid var(--border-color);
 }
 
 .modal-actions .btn:not(.secondary) {
-  background: #020617;
-  color: #ffffff;
+  background: var(--bg-nav-active);
+  color: var(--bg-white);
   border: none;
 }
 
@@ -397,9 +484,9 @@ button:focus-visible {
   flex: 1;
   padding: 9px 0;
   border-radius: 999px;
-  border: 1px solid #e5e7eb;
-  background: #f9fafb;
-  color: #4b5563;
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+  color: var(--text-gray-medium);
   font-size: 14px;
   cursor: pointer;
   transition:
@@ -410,15 +497,15 @@ button:focus-visible {
 }
 
 .role-btn.active {
-  background: #020617;
-  color: #ffffff;
-  border-color: #020617;
+  background: var(--bg-nav-active);
+  color: var(--bg-white);
+  border-color: var(--bg-nav-active);
   box-shadow: 0 4px 12px rgba(15, 23, 42, 0.25);
 }
 
 .role-btn:not(.active):hover {
   background: #eef2ff;
-  border-color: #c7d2fe;
+  border-color: var(--bg-indigo-200);
 }
 
 /* ==== 업로드 상세보기 모달 확장 ==== */
@@ -475,13 +562,13 @@ button:focus-visible {
 
 /* 왼쪽 텍스트 영역 */
 .detail-text-box {
-  background: #f9fafb;
+  background: var(--bg-card);
   border-radius: 14px;
   min-height: 260px;
   width : 200px;
   padding: 18px 20px;
   font-size: 14px;
-  color: #111827;
+  color: var(--text-dark);
   line-height: 1.5;
   white-space: pre-wrap;
   overflow-y: auto;
@@ -493,8 +580,8 @@ button:focus-visible {
   min-height: 260px;
   padding: 16px 18px;
   border-radius: 14px;
-  border: 1px solid #e5e7eb;
-  background: #f9fafb;
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
   resize: vertical;
   font-size: 14px;
   line-height: 1.5;
@@ -503,18 +590,18 @@ button:focus-visible {
 
 /* 오른쪽 카드 공통 */
 .analysis-card {
-  background: #f9fafb;
+  background: var(--bg-card);
   border-radius: 18px;
   padding: 16px 18px 14px;
   margin-bottom: 12px;
 }
 
 .activity-info-card {
-  background: #eff6ff;
+  background: var(--bg-blue-lighter);
 }
 
 .performance-card {
-  background: #fffbeb;
+  background: var(--bg-amber-50);
 }
 
 /* 카드 타이틀 / 보조 텍스트 */
@@ -561,7 +648,7 @@ button:focus-visible {
 .performance-comment-block {
   margin-top: 6px;
   padding-top: 6px;
-  border-top: 1px dashed #facc15;
+  border-top: 1px dashed var(--color-yellow);
   font-size: 13px;
 }
 
@@ -573,24 +660,24 @@ button:focus-visible {
   padding: 4px 10px;
   border-radius: 999px;
   font-size: 12px;
-  background: #e0f2fe;
-  color: #0369a1;
+  background: var(--bg-sky-light);
+  color: var(--text-sky-dark);
 }
 
 .skill-chip {
-  background: #dbeafe;
-  color: #1d4ed8;
+  background: var(--bg-blue-pale);
+  color: var(--text-blue-dark);
 }
 
 /* 감정 칩은 살짝 다른 색 */
 .emotion-chip {
-  background: #fee2e2;
-  color: #b91c1c;
+  background: var(--bg-red-light);
+  color: var(--text-red-dark);
 }
 
 /* 감정 영역 카드 */
 .emotion-card {
-  background: #f9fafb;
+  background: var(--bg-card);
   border-radius: 18px;
   padding: 14px 18px 12px;
   margin-bottom: 10px;
@@ -616,8 +703,8 @@ button:focus-visible {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid #f1f5f9;
-  background: #ffffff;
+  border-bottom: 1px solid var(--bg-slate-100);
+  background: var(--bg-white);
   position: sticky;
   top: 0;
   z-index: 40;
@@ -626,7 +713,7 @@ button:focus-visible {
 .top-nav-left .brand {
   font-size: 18px;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--text-main);
 }
 
 .top-nav-center {
@@ -645,7 +732,7 @@ button:focus-visible {
   border-radius: 999px;
   border: none;
   background: transparent;
-  color: #0f172a;
+  color: var(--text-main);
   cursor: pointer;
   transition:
     background-color 0.15s ease,
@@ -659,25 +746,25 @@ button:focus-visible {
 
 .nav-tab:not(.active) {
   background: #f3f4f6;
-  color: #0f172a;
+  color: var(--text-main);
 }
 
 .nav-tab:hover {
   transform: translateY(-1px);
-  background: #e5e7eb;
+  background: var(--border-color);
 }
 
 .nav-tab.active {
-  background: #020617;
-  color: #ffffff;
+  background: var(--bg-nav-active);
+  color: var(--bg-white);
 }
 
 .top-nav-right .avatar-btn {
   width: 32px;
   height: 32px;
   border-radius: 999px;
-  border: 1px solid #e2e8f0;
-  background: #ffffff;
+  border: 1px solid var(--bg-slate-200);
+  background: var(--bg-white);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -695,20 +782,20 @@ button:focus-visible {
   margin-top: 32px;
   padding: 24px;
   border-radius: 18px;
-  background: #ffffff;
-  border: 1px solid #e5e7eb;
+  background: var(--bg-white);
+  border: 1px solid var(--border-color);
 }
 
 .section-header h2 {
   margin: 0 0 4px;
   font-size: 18px;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--text-main);
 }
 
 .section-header .muted {
   font-size: 13px;
-  color: #6b7280;
+  color: var(--text-muted);
 }
 
 .upload-list {
@@ -720,8 +807,8 @@ button:focus-visible {
   position: relative;
   padding: 16px 20px;
   border-radius: 18px;
-  background: #ffffff;
-  border: 1px solid #e5e7eb;
+  background: var(--bg-white);
+  border: 1px solid var(--border-color);
   margin-bottom: 12px;
   display: flex;
   flex-direction: column;
@@ -730,18 +817,18 @@ button:focus-visible {
 
 /* 상태별 배경 / 테두리 색 */
 .upload-card-success {
-  border-color: #bbf7d0;
-  background: #f0fdf4;
+  border-color: var(--border-green-light);
+  background: var(--bg-green-pale);
 }
 
 .upload-card-processing {
-  border-color: #bfdbfe;
-  background: #eff6ff;
+  border-color: var(--border-blue-pale);
+  background: var(--bg-blue-lighter);
 }
 
 .upload-card-failed {
-  border-color: #fecaca;
-  background: #fef2f2;
+  border-color: var(--border-red-light);
+  background: var(--bg-red-pale);
 }
 
 /* 상단 정보 줄 */
@@ -761,7 +848,7 @@ button:focus-visible {
   align-items: center;
   gap: 8px;
   font-weight: 600;
-  color: #111827;
+  color: var(--text-dark);
   margin-bottom: 4px;
 }
 
@@ -772,14 +859,14 @@ button:focus-visible {
 /* 메타 정보 (학생, 업로드일 등) */
 .upload-card-meta {
   font-size: 13px;
-  color: #6b7280;
+  color: var(--text-muted);
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
 }
 
 .meta-sep {
-  color: #d1d5db;
+  color: var(--text-gray-light);
 }
 
 /* 전체 진행률 */
@@ -796,7 +883,7 @@ button:focus-visible {
 .upload-card-steps {
   margin-top: 10px;
   padding-top: 10px;
-  border-top: 1px dashed #e5e7eb;
+  border-top: 1px dashed var(--border-color);
 }
 
 .step-row {
@@ -810,7 +897,7 @@ button:focus-visible {
 .step-label {
   min-width: 88px;
   font-size: 13px;
-  color: #4b5563;
+  color: var(--text-gray-medium);
 }
 
 .step-progress-wrap {
@@ -825,12 +912,12 @@ button:focus-visible {
 }
 
 .step-progress > i {
-  background: #22c55e;
+  background: var(--color-green);
 }
 
 .step-percent {
   font-size: 12px;
-  color: #4b5563;
+  color: var(--text-gray-medium);
 }
 
 /* 카드 오른쪽 액션 영역 */
@@ -859,46 +946,46 @@ button:focus-visible {
 /* 상태별 progress 색상 */
 /* 전체 진행률 바 */
 .upload-card-success .overall-progress {
-  background: #dcfce7;
+  background: var(--bg-green-light);
 }
 .upload-card-success .overall-progress > i {
-  background: #16a34a;
+  background: var(--text-green-dark);
 }
 
 .upload-card-processing .overall-progress {
-  background: #dbeafe;
+  background: var(--bg-blue-pale);
 }
 .upload-card-processing .overall-progress > i {
-  background: #2563eb;
+  background: var(--color-blue-600);
 }
 
 .upload-card-failed .overall-progress {
-  background: #fee2e2;
+  background: var(--bg-red-light);
 }
 .upload-card-failed .overall-progress > i {
-  background: #dc2626;
+  background: var(--text-red);
 }
 
 /* 단계별 progress 바 */
 .upload-card-success .step-progress {
-  background: #dcfce7;
+  background: var(--bg-green-light);
 }
 .upload-card-success .step-progress > i {
-  background: #16a34a;
+  background: var(--text-green-dark);
 }
 
 .upload-card-processing .step-progress {
-  background: #dbeafe;
+  background: var(--bg-blue-pale);
 }
 .upload-card-processing .step-progress > i {
-  background: #2563eb;
+  background: var(--color-blue-600);
 }
 
 .upload-card-failed .step-progress {
-  background: #fee2e2;
+  background: var(--bg-red-light);
 }
 .upload-card-failed .step-progress > i {
-  background: #dc2626;
+  background: var(--text-red);
 }
 
 /* ───────── 8. Dashboard 학생 카드 ───────── */
@@ -925,8 +1012,8 @@ button:focus-visible {
   width: 56px;
   height: 56px;
   border-radius: 999px;
-  background: #2563eb;
-  color: #ffffff;
+  background: var(--color-blue-600);
+  color: var(--bg-white);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -949,19 +1036,19 @@ button:focus-visible {
   flex: 0 0 50%;
   max-width: 50%;
   border-radius: 999px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--border-color);
 
   padding: 10px 40px 10px 24px; /* 텍스트 오른쪽으로, 오른쪽은 화살표 여백 */
   font-size: 14px;
-  background-color: #f9fafb;
+  background-color: var(--bg-card);
 
   -webkit-appearance: none;
   -moz-appearance: none;
   appearance: none;
 
   background-image:
-    linear-gradient(45deg, transparent 50%, #6b7280 50%),
-    linear-gradient(135deg, #6b7280 50%, transparent 50%);
+    linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
+    linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
   background-position:
     calc(85% - 4px) 50%,
     85% 50%;
@@ -973,8 +1060,8 @@ button:focus-visible {
   width: 34px;
   height: 34px;
   border-radius: 999px;
-  border: 1px solid #e5e7eb;
-  background: #ffffff;
+  border: 1px solid var(--border-color);
+  background: var(--bg-white);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -984,12 +1071,12 @@ button:focus-visible {
 .student-tagline {
   margin-top: 6px;
   font-size: 13px;
-  color: #6b7280;
+  color: var(--text-muted);
 }
 
 .student-divider {
   margin-top: 12px;
-  border-top: 1px solid #e5e7eb;
+  border-top: 1px solid var(--border-color);
 }
 
 .student-metrics-row {
@@ -1009,11 +1096,11 @@ button:focus-visible {
 }
 
 .metric-blue {
-  color: #2563eb;
+  color: var(--color-blue-600);
 }
 
 .metric-green {
-  color: #16a34a;
+  color: var(--text-green-dark);
 }
 
 .metric-purple {
@@ -1023,7 +1110,7 @@ button:focus-visible {
 .metric-label {
   margin-top: 2px;
   font-size: 12px;
-  color: #6b7280;
+  color: var(--text-muted);
 }
 
 /* ───────── 9. Dashboard 공통 카드 & 레이아웃 ───────── */
@@ -1038,8 +1125,8 @@ button:focus-visible {
   margin: 0 0 16px;
   padding: 24px;
   border-radius: 18px;
-  background: #ffffff;
-  border: 1px solid #e5e7eb;
+  background: var(--bg-white);
+  border: 1px solid var(--border-color);
 }
 
 /* 상단 필터 카드 2열 레이아웃 (학생 / 캘린더) */
@@ -1090,7 +1177,7 @@ button:focus-visible {
 .calendar-field label {
   display: block;
   font-size: 12px;
-  color: #6b7280;
+  color: var(--text-muted);
   margin-bottom: 4px;
 }
 
@@ -1100,9 +1187,9 @@ button:focus-visible {
   padding: 4px 8px;
   height: 32px;
   border-radius: 8px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--border-color);
   font-size: 12px;
-  background: #f9fafb;
+  background: var(--bg-card);
 }
 
 .calendar-actions {
@@ -1194,7 +1281,7 @@ button:focus-visible {
 }
 
 .legend-neutral {
-  background: #f59e0b;
+  background: var(--text-amber-500);
 }
 
 /* 감정 분포 상세 모달 */
@@ -1207,7 +1294,7 @@ button:focus-visible {
   padding: 24px 28px 22px;
   background: #f9fbff;
   border-radius: 18px;
-  border: 1px solid #bfdbfe;
+  border: 1px solid var(--border-blue-pale);
   box-shadow: 0 22px 45px rgba(15, 23, 42, 0.25);
 }
 
@@ -1228,8 +1315,8 @@ button:focus-visible {
   margin-top: 10px;
   padding: 14px 18px 10px;
   border-radius: 16px;
-  background: #eff6ff;
-  border: 1px solid #c7d2fe;
+  background: var(--bg-blue-lighter);
+  border: 1px solid var(--bg-indigo-200);
 }
 
 /* 표 자체 */
@@ -1242,8 +1329,8 @@ button:focus-visible {
 .emotion-detail-table thead th {
   text-align: left;
   padding: 6px 4px 8px;
-  color: #4b5563;
-  border-bottom: 1px solid #dbeafe;
+  color: var(--text-gray-medium);
+  border-bottom: 1px solid var(--bg-blue-pale);
 }
 
 .emotion-detail-table tbody td {
@@ -1266,7 +1353,7 @@ button:focus-visible {
 }
 
 .emotion-detail-desc {
-  color: #4b5563;
+  color: var(--text-gray-medium);
 }
 
 /* 분석 요약 박스 */
@@ -1274,10 +1361,10 @@ button:focus-visible {
   margin-top: 14px;
   padding: 12px 16px 10px;
   border-radius: 16px;
-  background: #e0f2fe;
+  background: var(--bg-sky-light);
   border: 1px solid #bae6fd;
   font-size: 13px;
-  color: #111827;
+  color: var(--text-dark);
 }
 
 .emotion-detail-summary-title {
@@ -1319,8 +1406,8 @@ button:focus-visible {
 .ability-summary-card {
   border-radius: 18px;
   padding: 18px 20px;
-  background: #f9fafb;
-  box-shadow: 0 0 0 1px #e5e7eb;
+  background: var(--bg-card);
+  box-shadow: 0 0 0 1px var(--border-color);
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -1330,20 +1417,20 @@ button:focus-visible {
 .summary-title {
   font-size: 13px;
   font-weight: 600;
-  color: #4b5563;
+  color: var(--text-gray-medium);
   margin-bottom: 8px;
 }
 
 .summary-main {
   font-size: 26px;
   font-weight: 700;
-  color: #111827;
+  color: var(--text-dark);
   margin-bottom: 6px;
 }
 
 .summary-sub {
   font-size: 12px;
-  color: #6b7280;
+  color: var(--text-muted);
 }
 
 /* 카드별 색감 */
@@ -1353,8 +1440,8 @@ button:focus-visible {
 }
 
 .summary-good {
-  background: #eff6ff;
-  box-shadow: 0 0 0 1px #bfdbfe;
+  background: var(--bg-blue-lighter);
+  box-shadow: 0 0 0 1px var(--border-blue-pale);
 }
 
 .summary-challenge {
@@ -1364,7 +1451,7 @@ button:focus-visible {
 
 .summary-average {
   background: #fefce8;
-  box-shadow: 0 0 0 1px #facc15;
+  box-shadow: 0 0 0 1px var(--color-yellow);
 }
 
 /* ───────── 12. 활동별 능력 분석 테이블 ───────── */
@@ -1379,9 +1466,9 @@ button:focus-visible {
   grid-template-columns: 1.8fr 1.1fr 3.2fr 1.2fr 1.6fr;
   gap: 16px;
   font-size: 13px;
-  color: #6b7280;
+  color: var(--text-muted);
   padding: 6px 4px 10px 0;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--border-color);
 }
 
 /* 데이터 한 줄 */
@@ -1402,7 +1489,7 @@ button:focus-visible {
 
 .activity-name {
   font-weight: 500;
-  color: #111827;
+  color: var(--text-dark);
 }
 
 .activity-date {
@@ -1432,13 +1519,13 @@ button:focus-visible {
 }
 
 .level-good {
-  background: #eff6ff;
-  color: #1d4ed8;
+  background: var(--bg-blue-lighter);
+  color: var(--text-blue-dark);
 }
 
 .level-challenge {
-  background: #fef2f2;
-  color: #b91c1c;
+  background: var(--bg-red-pale);
+  color: var(--text-red-dark);
 }
 
 /* 능력 분포 막대 */
@@ -1451,7 +1538,7 @@ button:focus-visible {
   height: 14px;
   border-radius: 999px;
   overflow: hidden;
-  background: #fee2e2;
+  background: var(--bg-red-light);
   display: flex;
 }
 
@@ -1461,7 +1548,7 @@ button:focus-visible {
 }
 
 .bar-hard {
-  background: #fb7185; /* 빨강 */
+  background: var(--color-rose-400); /* 빨강 */
 }
 
 .bar-normal {
@@ -1477,7 +1564,7 @@ button:focus-visible {
   justify-content: space-between;
   margin-top: 4px;
   font-size: 11px;
-  color: #6b7280;
+  color: var(--text-muted);
 }
 
 /* 종합 점수 */
@@ -1488,7 +1575,7 @@ button:focus-visible {
 .score-main {
   font-size: 16px;
   font-weight: 600;
-  color: #111827;
+  color: var(--text-dark);
 }
 
 /* 주요 능력 칩 */
@@ -1501,8 +1588,8 @@ button:focus-visible {
 .skill-chip {
   padding: 4px 10px;
   border-radius: 999px;
-  background: #f3f4ff;
-  color: #4f46e5;
+  background: var(--bg-indigo-light);
+  color: var(--color-primary);
   font-size: 12px;
 }
 
@@ -1527,8 +1614,8 @@ button:focus-visible {
   margin-top: 16px;
   padding: 20px 24px 18px;
   border-radius: 18px;
-  border: 1px solid #e5e7eb;
-  background: #ffffff;
+  border: 1px solid var(--border-color);
+  background: var(--bg-white);
 }
 
 /* 필터 상단 제목 줄 */
@@ -1565,7 +1652,7 @@ button:focus-visible {
 .filter-label {
   font-size: 13px;
   font-weight: 500;
-  color: #111827;
+  color: var(--text-dark);
 }
 
 .filter-mode-text {
@@ -1587,13 +1674,13 @@ button:focus-visible {
   border: none;
   background: transparent;
   font-size: 12px;
-  color: #4b5563;
+  color: var(--text-gray-medium);
   cursor: pointer;
 }
 
 .filter-toggle.active {
-  background: #ffffff;
-  color: #111827;
+  background: var(--bg-white);
+  color: var(--text-dark);
   box-shadow: 0 1px 4px rgba(15, 23, 42, 0.12);
 }
 
@@ -1608,7 +1695,7 @@ button:focus-visible {
 .filter-field label {
   display: block;
   font-size: 12px;
-  color: #6b7280;
+  color: var(--text-muted);
   margin-bottom: 4px;
 }
 
@@ -1617,9 +1704,9 @@ button:focus-visible {
   width: 50%;
   padding: 8px 10px;
   border-radius: 10px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--border-color);
   font-size: 13px;
-  background: #f9fafb;
+  background: var(--bg-card);
 }
 
 /* 필터 하단 */
@@ -1650,9 +1737,9 @@ button:focus-visible {
 
 /* 개별 리포트 카드 */
 .report-card {
-  background: #ffffff;
+  background: var(--bg-white);
   border-radius: 16px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--border-color);
   padding: 14px 16px 12px;
   display: flex;
   flex-direction: column;
@@ -1679,7 +1766,7 @@ button:focus-visible {
   align-items: center;
   justify-content: center;
   font-size: 18px;
-  color: #4f46e5;
+  color: var(--color-primary);
 }
 
 .report-card-title-block {
@@ -1694,7 +1781,7 @@ button:focus-visible {
 
 .report-card-meta {
   font-size: 12px;
-  color: #6b7280;
+  color: var(--text-muted);
   line-height: 1.5;
 }
 
@@ -1708,33 +1795,33 @@ button:focus-visible {
   font-size: 11px;
   padding: 4px 10px;
   border-radius: 999px;
-  border: 1px solid #e5e7eb;
-  background: #f9fafb;
-  color: #4b5563;
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+  color: var(--text-gray-medium);
 }
 
 .report-status-badge.success {
   background: #ecfdf5;
-  border-color: #bbf7d0;
+  border-color: var(--border-green-light);
   color: #15803d;
 }
 
 .report-status-badge.running {
-  background: #eff6ff;
-  border-color: #bfdbfe;
-  color: #1d4ed8;
+  background: var(--bg-blue-lighter);
+  border-color: var(--border-blue-pale);
+  color: var(--text-blue-dark);
 }
 
 .report-status-badge.queued {
   background: #fefce8;
-  border-color: #fde68a;
+  border-color: var(--bg-amber-200);
   color: #92400e;
 }
 
 .report-status-badge.failed {
-  background: #fef2f2;
-  border-color: #fecaca;
-  color: #b91c1c;
+  background: var(--bg-red-pale);
+  border-color: var(--border-red-light);
+  color: var(--text-red-dark);
 }
 
 /* 카드 하단 */
@@ -1822,7 +1909,7 @@ button:focus-visible {
 .app-footer {
   padding: 0 12px 12px;
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--text-gray-lighter);
   text-align: center;
 }
 
@@ -1909,20 +1996,20 @@ button:focus-visible {
   height: 500px;
   resize: vertical;
   border-radius: 18px;
-  border: 1px solid #e5e7eb;
-  background: #f7f8fb;
+  border: 1px solid var(--border-color);
+  background: var(--bg-input);
   padding: 14px 16px;
   font-size: 14px;
   line-height: 1.5;
-  color: #111827;
+  color: var(--text-dark);
   outline: none;
   font-family: inherit;
 }
 
 .detail-textarea:focus {
-  border-color: #111827;
-  box-shadow: 0 0 0 1px #11182712;
-  background: #ffffff;
+  border-color: var(--text-dark);
+  box-shadow: 0 0 0 1px var(--text-dark)12;
+  background: var(--bg-white);
 }
 
 .detail-text-box {
@@ -1930,20 +2017,20 @@ button:focus-visible {
   min-height: 360px;
   border-radius: 18px;
   border: 1px solid #f3f4f6;
-  background: #f7f8fb;
+  background: var(--bg-input);
   padding: 14px 16px;
   font-size: 14px;
   line-height: 1.6;
-  color: #111827;
+  color: var(--text-dark);
   white-space: pre-wrap;
 }
 
 /* ===== 우측 카드 공통 스타일 ===== */
 
 .analysis-card {
-  background: #f9fafb;
+  background: var(--bg-card);
   border-radius: 18px;
-  border: 1px solid #edf0f4;
+  border: 1px solid var(--border-card);
   padding: 12px 16px 14px;
   font-size: 13px;
 }
@@ -1956,14 +2043,14 @@ button:focus-visible {
 
 /* 활동 정보 카드 색상 */
 .activity-info-card {
-  background: #f3f7ff;
-  border-color: #e3ecff;
+  background: var(--bg-blue-light);
+  border-color: var(--border-blue-light);
 }
 
 /* 수행/능력 카드 색상 */
 .performance-card {
-  background: #fffaf0;
-  border-color: #ffedd5;
+  background: var(--bg-orange-light);
+  border-color: var(--border-orange-light);
 }
 
 /* ===== 활동 정보 그리드 ===== */
@@ -1976,14 +2063,14 @@ button:focus-visible {
 
 .activity-info-grid dt {
   font-size: 11px;
-  color: #6b7280;
+  color: var(--text-muted);
   margin-bottom: 2px;
 }
 
 .activity-info-grid dd {
   margin: 0;
   font-size: 13px;
-  color: #111827;
+  color: var(--text-dark);
 }
 
 /* ===== 인풋 / 텍스트에어리어 공통 ===== */
@@ -1991,30 +2078,30 @@ button:focus-visible {
 .analysis-input {
   width: 73%;
   border-radius: 14px;
-  border: 1px solid #e5e7eb;
-  background: #f7f8fb;
+  border: 1px solid var(--border-color);
+  background: var(--bg-input);
   padding: 7px 10px;
   font-size: 13px;
-  color: #111827;
+  color: var(--text-dark);
   outline: none;
 }
 
 .analysis-textarea {
   width: 76%;
   border-radius: 14px;
-  border: 1px solid #e5e7eb;
-  background: #f7f8fb;
+  border: 1px solid var(--border-color);
+  background: var(--bg-input);
   padding: 7px 10px;
   font-size: 13px;
-  color: #111827;
+  color: var(--text-dark);
   outline: none;
 }
 
 .analysis-input:focus,
 .analysis-textarea:focus {
-  border-color: #111827;
-  box-shadow: 0 0 0 1px #11182712;
-  background: #ffffff;
+  border-color: var(--text-dark);
+  box-shadow: 0 0 0 1px var(--text-dark)12;
+  background: var(--bg-white);
 }
 
 .analysis-textarea {
@@ -2037,18 +2124,18 @@ button:focus-visible {
 .performance-item .label {
   display: block;
   font-size: 11px;
-  color: #6b7280;
+  color: var(--text-muted);
   margin-bottom: 3px;
 }
 
 .performance-item .value {
   font-size: 13px;
   font-weight: 600;
-  color: #111827;
+  color: var(--text-dark);
 }
 
 .performance-item .value.score {
-  color: #111827;
+  color: var(--text-dark);
 }
 
 /* 능력 칩 / 입력 영역 */
@@ -2059,7 +2146,7 @@ button:focus-visible {
 .ability-chips-row .label {
   display: block;
   font-size: 11px;
-  color: #6b7280;
+  color: var(--text-muted);
   margin-bottom: 4px;
 }
 
@@ -2073,22 +2160,22 @@ button:focus-visible {
   padding: 3px 8px;
   border-radius: 999px;
   font-size: 11px;
-  background: #e0f2fe;
-  color: #0369a1;
+  background: var(--bg-sky-light);
+  color: var(--text-sky-dark);
 }
 
 /* 점수/능력 설명 문장 */
 .performance-explain {
   margin-top: 6px;
   font-size: 12px;
-  color: #4b5563;
+  color: var(--text-gray-medium);
   line-height: 1.5;
 }
 
 /* 수정 버튼 active 상태 */
 .detail-header-actions .btn.secondary.active {
-  background: #e5e7eb;
-  color: #111827;
+  background: var(--border-color);
+  color: var(--text-dark);
 }
 
 /* 반응형: 폭이 좁으면 세로 레이아웃 */
@@ -2123,9 +2210,9 @@ button:focus-visible {
   right: 48px;
   width: 140px;
   padding: 4px 0;
-  background: #ffffff;
+  background: var(--bg-white);
   border-radius: 12px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--border-color);
   box-shadow: 0 18px 40px rgba(15, 23, 42, 0.18);
   z-index: 80;
   font-size: 13px;
@@ -2140,16 +2227,16 @@ button:focus-visible {
   cursor: pointer;
 
   /* ✅ 글자색을 확실하게 지정 */
-  color: #111827 !important;
+  color: var(--text-dark) !important;
   line-height: 1.4;
 }
 
 .profile-menu-item + .profile-menu-item {
-  border-top: 1px solid #f1f5f9;
+  border-top: 1px solid var(--bg-slate-100);
 }
 
 .profile-menu-item:hover {
-  background: #f9fafb;
+  background: var(--bg-card);
 }
 
 /* 프로필 설정 모달 (스크린샷 사이즈에 맞춤) */
@@ -2174,7 +2261,7 @@ button:focus-visible {
 .profile-settings-helper {
   margin: 10px 0 4px;
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--text-gray-lighter);
 }
 
 /* 반응형 */
@@ -2203,7 +2290,7 @@ button:focus-visible {
 
 .time-input-group .time-separator {
   font-size: 13px;
-  color: #4b5563;
+  color: var(--text-gray-medium);
 }
 
 /* 리포트 카드 - 용도 뱃지 / 남은 시간 / 진행 바 / 세로 버튼 정렬 */
@@ -2216,7 +2303,7 @@ button:focus-visible {
   font-size: 12px;
   font-weight: 500;
   background: #eef2ff;
-  color: #4f46e5;
+  color: var(--color-primary);
   margin-top: 4px;
 }
 
@@ -2233,14 +2320,14 @@ button:focus-visible {
   width: 100%;
   height: 6px;
   border-radius: 999px;
-  background: #e5e7eb;
+  background: var(--border-color);
   overflow: hidden;
 }
 
 .report-deadline-inner {
   height: 100%;
   border-radius: 999px;
-  background: #020617;
+  background: var(--bg-nav-active);
   transition: width 0.3s ease;
 }
 
@@ -2252,19 +2339,19 @@ button:focus-visible {
 }
 
 .btn.danger-outline {
-  background: #ffffff;
+  background: var(--bg-white);
   border: 1px solid #fca5a5;
-  color: #dc2626;
+  color: var(--text-red);
 }
 .btn.danger-outline:hover {
-  background: #fef2f2;
+  background: var(--bg-red-pale);
 }
 
 /* ---------- UploadPage modern cards & modal ---------- */
 
 .card-shell {
-  background: #ffffff;
-  border: 1px solid #e5e7eb;
+  background: var(--bg-white);
+  border: 1px solid var(--border-color);
   border-radius: 18px;
   padding: 18px 20px;
   margin-bottom: 16px;
@@ -2276,22 +2363,22 @@ button:focus-visible {
 }
 
 .card-shell-success {
-  border-color: #bbf7d0;
+  border-color: var(--border-green-light);
 }
 
 .card-shell-error {
-  border-color: #fecaca;
+  border-color: var(--border-red-light);
 }
 
 .card-shell-processing {
-  border-color: #fde68a;
+  border-color: var(--bg-amber-200);
 }
 
 .card-title-main {
   font-size: 15px;
   font-weight: 600;
   margin: 0 0 4px;
-  color: #0f172a;
+  color: var(--text-main);
 }
 
 .card-subtitle {
@@ -2311,28 +2398,28 @@ button:focus-visible {
 }
 
 .badge-success {
-  background: #dcfce7;
+  background: var(--bg-green-light);
   color: #15803d;
 }
 
 .badge-warning {
-  background: #fef3c7;
+  background: var(--bg-amber-100);
   color: #b45309;
 }
 
 .badge-error {
-  background: #fee2e2;
-  color: #b91c1c;
+  background: var(--bg-red-light);
+  color: var(--text-red-dark);
 }
 
 .btn.ghost {
   background: transparent;
-  border: 1px dashed #d1d5db;
+  border: 1px dashed var(--text-gray-light);
   color: #374151;
 }
 
 .btn.ghost:hover {
-  background: #f9fafb;
+  background: var(--bg-card);
 }
 
 .upload-card-shell {
@@ -2374,7 +2461,7 @@ button:focus-visible {
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 16px;
   padding: 12px 0 4px;
-  border-top: 1px solid #f1f5f9;
+  border-top: 1px solid var(--bg-slate-100);
   padding-top: 20px;
 }
 
@@ -2402,8 +2489,8 @@ button:focus-visible {
 }
 
 .detail-panel {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
+  background: var(--bg-slate-50);
+  border: 1px solid var(--bg-slate-200);
   border-radius: 16px;
   padding: 16px;
   height: 100%;
@@ -2417,7 +2504,7 @@ button:focus-visible {
 
 .detail-helper-text {
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--text-slate-400);
   margin-top: 8px;
 }
 
@@ -2427,9 +2514,9 @@ button:focus-visible {
 }
 
 .analysis-panel {
-  background: #ffffff;
+  background: var(--bg-white);
   border-radius: 16px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--bg-slate-200);
   padding: 16px 18px;
   display: flex;
   flex-direction: column;
@@ -2451,7 +2538,7 @@ button:focus-visible {
 }
 
 .analysis-section {
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--border-color);
   border-radius: 12px;
   padding: 14px 16px;
   background: #fbfdff;
@@ -2472,7 +2559,7 @@ button:focus-visible {
 
 .section-helper {
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--text-slate-400);
   margin: 4px 0 0;
 }
 
@@ -2488,10 +2575,10 @@ button:focus-visible {
 }
 
 .analysis-input-static {
-  background: #f8fafc;
+  background: var(--bg-slate-50);
   border-radius: 10px;
   padding: 9px 12px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--bg-slate-200);
   font-size: 13px;
 }
 
@@ -2521,7 +2608,7 @@ button:focus-visible {
 .emotion-bar {
   width: 100%;
   height: 8px;
-  background: #e5e7eb;
+  background: var(--border-color);
   border-radius: 999px;
   overflow: hidden;
 }
@@ -2539,7 +2626,7 @@ button:focus-visible {
 }
 
 .activity-type-card {
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--bg-slate-200);
   border-radius: 16px;
   overflow: hidden;
   background: #fff;
@@ -2549,7 +2636,7 @@ button:focus-visible {
 
 .activity-type-card.selected {
   border-color: #93c5fd;
-  box-shadow: inset 0 0 0 1px #bfdbfe;
+  box-shadow: inset 0 0 0 1px var(--border-blue-pale);
 }
 
 .activity-type-toggle {
@@ -2559,7 +2646,7 @@ button:focus-visible {
   gap: 8px;
   padding: 10px 12px;
   border: none;
-  background: #0f172a;
+  background: var(--text-main);
   color: #fff;
   border-radius: 0;
 }
@@ -2570,7 +2657,7 @@ button:focus-visible {
 
 .activity-type-detail {
   border: none;
-  border-top: 1px solid #e2e8f0;
+  border-top: 1px solid var(--bg-slate-200);
   border-radius: 0 0 12px 12px;
   min-height: 60px;
   padding: 10px 12px;
@@ -2589,7 +2676,7 @@ button:focus-visible {
 }
 
 .activity-detail-table {
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--border-color);
   border-radius: 14px;
   overflow: hidden;
   margin-bottom: 16px;
@@ -2605,10 +2692,10 @@ button:focus-visible {
 }
 
 .activity-detail-table-head {
-  background: #f8fafc;
+  background: var(--bg-slate-50);
   font-size: 13px;
   font-weight: 600;
-  color: #475569;
+  color: var(--text-slate-600);
 }
 
 .activity-detail-row:nth-child(odd) {
@@ -2630,17 +2717,17 @@ button:focus-visible {
 }
 
 .activity-summary-card {
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--bg-slate-200);
   border-radius: 12px;
   padding: 12px;
   background: #fff;
 }
 
 .activity-analysis-box {
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--bg-slate-200);
   border-radius: 12px;
   padding: 14px;
-  background: #f8fafc;
+  background: var(--bg-slate-50);
   font-size: 13px;
   color: #374151;
 }
@@ -2649,20 +2736,20 @@ button:focus-visible {
   display: inline-flex;
   padding: 3px 8px;
   background: #eef2ff;
-  color: #4338ca;
+  color: var(--text-indigo-700);
   border-radius: 999px;
   font-size: 12px;
   font-weight: 600;
 }
 
 .emotion-chip-selected {
-  background: #fb7185;
-  color: #ffffff;
+  background: var(--color-rose-400);
+  color: var(--bg-white);
 }
 
 .emotion-chip-unselected {
-  background: #2563eb;
-  color: #ffffff;
+  background: var(--color-blue-600);
+  color: var(--bg-white);
 }
 
 .emotion-chip-label {
@@ -2721,7 +2808,7 @@ button:focus-visible {
 button {
   background-color: var(--primary);
   border-color: var(--primary);
-  color: #ffffff;
+  color: var(--bg-white);
 }
 
 button:hover {
@@ -2732,7 +2819,7 @@ button:hover {
 @media (prefers-color-scheme: light) {
   button {
     background-color: var(--primary);
-    color: #ffffff;
+    color: var(--bg-white);
   }
 }
 
@@ -2743,7 +2830,7 @@ button:hover {
 }
 
 .btn.secondary {
-  background: #ffffff;
+  background: var(--bg-white);
   color: var(--primary);
   border: 1px solid #ffd0df;
 }
@@ -2761,7 +2848,7 @@ button:hover {
 /* TopNav 활성 탭 */
 .nav-tab.active {
   background: var(--primary);
-  color: #ffffff;
+  color: var(--bg-white);
 }
 
 /* 학생 아바타 & 지표 색상 */
@@ -2902,12 +2989,12 @@ button:hover {
 
 .emotion-chip-selected {
   background: var(--primary);
-  color: #ffffff;
+  color: var(--bg-white);
 }
 
 .emotion-chip-unselected {
   background: var(--green);
-  color: #ffffff;
+  color: var(--bg-white);
 }
 
 /* 활동 타입 칩 */
@@ -3007,8 +3094,8 @@ button:hover {
   resize: vertical;
   overflow-y: auto;    /* 내용이 많으면 내부 스크롤 */
   border-radius: 18px;
-  border: 1px solid #e5e7eb;
-  background: #f7f8fb;
+  border: 1px solid var(--border-color);
+  background: var(--bg-input);
   padding: 14px 16px;
   font-size: 14px;
   line-height: 1.5;
@@ -3016,9 +3103,9 @@ button:hover {
 }
 
 .detail-analysis-modal .detail-textarea:focus {
-  border-color: #111827;
-  box-shadow: 0 0 0 1px #11182712;
-  background: #ffffff;
+  border-color: var(--text-dark);
+  box-shadow: 0 0 0 1px var(--text-dark)12;
+  background: var(--bg-white);
 }
 
 /* ===== 오른쪽 분석 스크롤 영역 ===== */
@@ -3126,7 +3213,7 @@ button:hover {
 }
 
 .legend-neutral {
-  background: #f59e0b;
+  background: var(--text-amber-500);
 }
 
 /* =========================
@@ -3140,7 +3227,7 @@ button:hover {
   padding: 24px 28px 22px;
   background: #f9fbff;
   border-radius: 18px;
-  border: 1px solid #bfdbfe;
+  border: 1px solid var(--border-blue-pale);
   box-shadow: 0 22px 45px rgba(15, 23, 42, 0.25);
   overflow-y: auto;    /* 모달 내부에서 스크롤 */
 }
@@ -3150,8 +3237,8 @@ button:hover {
   margin-top: 10px;
   padding: 14px 18px 10px;
   border-radius: 16px;
-  background: #eff6ff;
-  border: 1px solid #c7d2fe;
+  background: var(--bg-blue-lighter);
+  border: 1px solid var(--bg-indigo-200);
 }
 
 /* 표 자체 */
@@ -3164,8 +3251,8 @@ button:hover {
 .emotion-detail-table thead th {
   text-align: left;
   padding: 6px 4px 8px;
-  color: #4b5563;
-  border-bottom: 1px solid #dbeafe;
+  color: var(--text-gray-medium);
+  border-bottom: 1px solid var(--bg-blue-pale);
 }
 
 .emotion-detail-table tbody td {
@@ -3195,10 +3282,10 @@ button:hover {
   margin-top: 14px;
   padding: 12px 16px 10px;
   border-radius: 16px;
-  background: #e0f2fe;
+  background: var(--bg-sky-light);
   border: 1px solid #bae6fd;
   font-size: 13px;
-  color: #111827;
+  color: var(--text-dark);
 }
 
 .emotion-detail-summary-title {
@@ -3232,7 +3319,7 @@ button:hover {
   gap: 8px;
   font-size: 16px;
   font-weight: 600;
-  color: #111827;
+  color: var(--text-dark);
 }
 
 .emotion-scale-title span:first-child {
@@ -3242,7 +3329,7 @@ button:hover {
 .emotion-scale-subtitle {
   margin-top: 4px;
   font-size: 13px;
-  color: #6b7280;
+  color: var(--text-muted);
 }
 
 .emotion-scale-section {
@@ -3252,7 +3339,7 @@ button:hover {
 .emotion-scale-section-title {
   font-size: 13px;
   font-weight: 600;
-  color: #111827;
+  color: var(--text-dark);
   margin-bottom: 8px;
 }
 
@@ -3279,12 +3366,12 @@ button:hover {
 .emotion-name {
   font-size: 14px;
   font-weight: 500;
-  color: #111827;
+  color: var(--text-dark);
 }
 
 .emotion-scale-minmax {
   font-size: 11px;
-  color: #9ca3af;
+  color: var(--text-gray-lighter);
 }
 
 /* 오른쪽: 점수 + 막대 */
@@ -3307,7 +3394,7 @@ button:hover {
 }
 
 .emotion-score-state {
-  color: #6b7280;
+  color: var(--text-muted);
 }
 
 .emotion-score-bar {
@@ -3315,7 +3402,7 @@ button:hover {
   width: 100%;
   height: 10px;
   border-radius: 999px;
-  background: #f3f4ff;
+  background: var(--bg-indigo-light);
   overflow: hidden;
 }
 
@@ -3323,7 +3410,7 @@ button:hover {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: linear-gradient(90deg, #f472ff, #8b5cf6);
+  background: linear-gradient(90deg, #f472ff, var(--color-violet-500));
 }
 
 /* =========================
@@ -3336,7 +3423,7 @@ button:hover {
 .activity-emotion-header {
   font-size: 13px;
   font-weight: 600;
-  color: #111827;
+  color: var(--text-dark);
   margin-bottom: 10px;
 }
 
@@ -3350,8 +3437,8 @@ button:hover {
 .activity-emotion-card {
   padding: 14px 16px 12px;
   border-radius: 16px;
-  border: 1px solid #e5e7eb;
-  background: #f9fafb;
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
   box-sizing: border-box;
 }
 
@@ -3362,11 +3449,11 @@ button:hover {
 }
 .activity-emotion-card:nth-child(2) {
   background: #ecfdf3;
-  border-color: #bbf7d0;
+  border-color: var(--border-green-light);
 }
 .activity-emotion-card:nth-child(3) {
-  background: #eff6ff;
-  border-color: #bfdbfe;
+  background: var(--bg-blue-lighter);
+  border-color: var(--border-blue-pale);
 }
 
 .activity-emotion-card-top {
@@ -3389,12 +3476,12 @@ button:hover {
 .activity-emotion-activity {
   font-size: 14px;
   font-weight: 600;
-  color: #111827;
+  color: var(--text-dark);
 }
 
 .activity-emotion-sub {
   font-size: 11px;
-  color: #6b7280;
+  color: var(--text-muted);
   margin-top: 1px;
 }
 
@@ -3412,7 +3499,7 @@ button:hover {
 
 .activity-emotion-label {
   font-weight: 500;
-  color: #111827;
+  color: var(--text-dark);
 }
 
 .activity-emotion-score {
@@ -3438,7 +3525,7 @@ button:hover {
 
 .activity-emotion-empty {
   font-size: 13px;
-  color: #9ca3af;
+  color: var(--text-gray-lighter);
   padding: 24px 8px;
   text-align: center;
 }
@@ -3456,7 +3543,7 @@ button:hover {
   padding: 24px 26px 22px;
   background: #f9fbff;
   border-radius: 18px;
-  border: 1px solid #bfdbfe;
+  border: 1px solid var(--border-blue-pale);
   box-shadow: 0 22px 45px rgba(15, 23, 42, 0.25);
 }
 
@@ -3471,7 +3558,7 @@ button:hover {
 .emotion-detail-title {
   font-size: 16px;
   font-weight: 600;
-  color: #111827;
+  color: var(--text-dark);
   margin-bottom: 4px;
 }
 
@@ -3479,7 +3566,7 @@ button:hover {
   padding: 6px 12px;
   border-radius: 999px;
   background: #eef2ff;
-  color: #4f46e5;
+  color: var(--color-primary);
   font-size: 12px;
   font-weight: 500;
 }
@@ -3500,7 +3587,7 @@ button:hover {
   font-size: 13px;
   font-weight: 600;
   margin-bottom: 10px;
-  color: #111827;
+  color: var(--text-dark);
 }
 
 /* 감정 카드 그리드 */
@@ -3513,8 +3600,8 @@ button:hover {
 .emotion-detail-card {
   border-radius: 14px;
   padding: 10px 12px 10px;
-  background: #ffffff;
-  border: 1px solid #e5e7eb;
+  background: var(--bg-white);
+  border: 1px solid var(--border-color);
   box-shadow: 0 4px 10px rgba(148, 163, 184, 0.18);
   box-sizing: border-box;
 }
@@ -3529,15 +3616,15 @@ button:hover {
 .emotion-detail-name {
   font-size: 13px;
   font-weight: 600;
-  color: #111827;
+  color: var(--text-dark);
 }
 
 .emotion-detail-count-pill {
   font-size: 11px;
   padding: 2px 8px;
   border-radius: 999px;
-  background: #f3f4ff;
-  color: #4f46e5;
+  background: var(--bg-indigo-light);
+  color: var(--color-primary);
 }
 
 .emotion-detail-score-row {
@@ -3550,7 +3637,7 @@ button:hover {
 }
 
 .emotion-detail-label {
-  color: #9ca3af;
+  color: var(--text-gray-lighter);
 }
 
 .emotion-detail-score {
@@ -3563,7 +3650,7 @@ button:hover {
   width: 100%;
   height: 8px;
   border-radius: 999px;
-  background: #f3f4ff;
+  background: var(--bg-indigo-light);
   overflow: hidden;
   margin-bottom: 4px;
 }
@@ -3572,12 +3659,12 @@ button:hover {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: linear-gradient(90deg, #f472ff, #8b5cf6);
+  background: linear-gradient(90deg, #f472ff, var(--color-violet-500));
 }
 
 .emotion-detail-desc-text {
   font-size: 11px;
-  color: #6b7280;
+  color: var(--text-muted);
   line-height: 1.4;
 }
 
@@ -3588,7 +3675,7 @@ button:hover {
   padding: 10px 12px;
   border-radius: 12px;
   background: #eef2ff;
-  border: 1px solid #e0e7ff;
+  border: 1px solid var(--bg-indigo-100);
 }
 
 /* =========================
@@ -3603,8 +3690,8 @@ button:hover {
 .activity-emotion-detail-card {
   border-radius: 14px;
   padding: 10px 12px 10px;
-  background: #ffffff;
-  border: 1px solid #e5e7eb;
+  background: var(--bg-white);
+  border: 1px solid var(--border-color);
   box-shadow: 0 4px 10px rgba(148, 163, 184, 0.16);
   box-sizing: border-box;
 }
@@ -3623,18 +3710,18 @@ button:hover {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #f3f4ff;
+  background: var(--bg-indigo-light);
 }
 
 .activity-emotion-detail-activity {
   font-size: 13px;
   font-weight: 600;
-  color: #111827;
+  color: var(--text-dark);
 }
 
 .activity-emotion-detail-sub {
   font-size: 11px;
-  color: #9ca3af;
+  color: var(--text-gray-lighter);
   margin-top: 1px;
 }
 
@@ -3652,7 +3739,7 @@ button:hover {
 
 .activity-emotion-detail-score {
   font-weight: 600;
-  color: #3b82f6;
+  color: var(--color-blue);
 }
 
 .activity-emotion-detail-bar {
@@ -3660,7 +3747,7 @@ button:hover {
   width: 100%;
   height: 8px;
   border-radius: 999px;
-  background: #eff6ff;
+  background: var(--bg-blue-lighter);
   overflow: hidden;
 }
 
@@ -3668,12 +3755,12 @@ button:hover {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: linear-gradient(90deg, #60a5fa, #2563eb);
+  background: linear-gradient(90deg, var(--color-blue-400), var(--color-blue-600));
 }
 
 .activity-detail-empty {
   font-size: 13px;
-  color: #9ca3af;
+  color: var(--text-gray-lighter);
   padding: 24px 8px;
   text-align: center;
 }
