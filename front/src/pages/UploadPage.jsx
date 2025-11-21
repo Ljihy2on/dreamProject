@@ -1835,11 +1835,11 @@ export default function UploadPage() {
                     <div className="detail-panel">
                       <div className="detail-panel-head">
                         <h4>원본 텍스트</h4>
+                        <p></p>
                         <p className="card-subtitle">
                           AI 분석 결과를 바탕으로 정리된 텍스트입니다.
-                          이 텍스트는 모든 학생 탭에서 공통으로
-                          사용되며, log_entries.log_content로 저장됩니다.
                         </p>
+                        <p></p>
                       </div>
                       <textarea
                         className="detail-textarea"
@@ -1854,8 +1854,6 @@ export default function UploadPage() {
                         placeholder="원본 텍스트를 편집하여 저장할 수 있습니다."
                       />
                       <p className="detail-helper-text">
-                        텍스트를 수정하면 학생별 활동 분석과 함께 공통
-                        원본으로 데이터베이스(log_entries)에 저장됩니다.
                       </p>
                     </div>
                   </section>

@@ -5,7 +5,7 @@ const multer = require('multer')
 const { GoogleGenerativeAI } = require('@google/generative-ai')
 const {
   PDF_TXT_EXTRACTION_PROMPT,
-  REPORT_GENERATION_PROMPT,
+  GET_REPORT_PROMPT,
 } = require('./prompts')
 
 const app = express()
@@ -911,10 +911,17 @@ app.post(
  *   date_range: {...},
  *   summary_stats: {...},
  *   activity_samples: [...],
- *   report_options: {...}
+ *   report_options: {
+ *     purpose: "parent" | "school" | "all",
+ *     tone: "부드럽고 ...",
+ *     category_code: "full" | "emotion" | "activity_ratio" | "ability_growth",
+ *     category_label: "전체 리포트" 등,
+ *     student_id: "...",
+ *     filter_mode: "range" | "single"
+ *   }
  * }
  *
- * REPORT_GENERATION_PROMPT 를 사용해 PDF용 Markdown 리포트 본문 생성
+ * prompts.js 의 GET_REPORT_PROMPT 를 사용해 Markdown 리포트 생성
  */
 app.post(
   ['/ai/generate-report', '/api/ai/generate-report'],
@@ -937,13 +944,48 @@ app.post(
         report_options,
       } = req.body || {}
 
+      // 프론트에서 넘어온 payload를 그대로 넣되, 빠진 값은 기본값으로 보정
       const payload = {
         student_profile: student_profile || null,
         date_range: date_range || null,
         summary_stats: summary_stats || null,
-        activity_samples: activity_samples || [],
+        activity_samples: Array.isArray(activity_samples)
+          ? activity_samples
+          : [],
         report_options: report_options || {},
       }
+
+      // ---- 프롬프트용 카테고리 / 목적 / 톤 정리 ----
+      const categoryCode =
+        (report_options && report_options.category_code) || 'full'
+      const categoryLabel =
+        (report_options && report_options.category_label) || '전체 리포트'
+
+      const purposeCode = report_options && report_options.purpose
+      const purposeForPrompt =
+        purposeCode === 'parent'
+          ? '학부모 상담용'
+          : purposeCode === 'school'
+          ? '학교 제출용'
+          : '기본 리포트'
+
+      const toneForPrompt =
+        (report_options && report_options.tone) ||
+        '분석적이고 요약 중심의 톤'
+
+      // GET_REPORT_PROMPT 는 category(코드/라벨 둘 다 허용), purpose, tone 을 받아
+      // {input_json} 자리까지 포함한 전체 프롬프트 틀을 만들어 준다.
+      const basePrompt = GET_REPORT_PROMPT(
+        categoryCode || categoryLabel,
+        purposeForPrompt,
+        toneForPrompt,
+      )
+
+      // {input_json} 토큰을 실제 JSON 문자열로 치환
+      const finalPrompt = basePrompt.replace(
+        '{input_json}',
+        JSON.stringify(payload, null, 2),
+      )
 
       const modelName = process.env.GEMINI_REPORT_MODEL || 'gemini-1.5-pro'
 
@@ -951,12 +993,7 @@ app.post(
         model: modelName,
       })
 
-      const prompt =
-        REPORT_GENERATION_PROMPT +
-        '\n\n[입력 JSON]\n' +
-        JSON.stringify(payload, null, 2)
-
-      const result = await model.generateContent(prompt)
+      const result = await model.generateContent(finalPrompt)
       const markdown = result.response.text()
 
       return res.json({
@@ -1274,19 +1311,6 @@ app.get(
 )
 
 // -------------------- 대시보드 Gemini 채팅 API (/api/dashboard/chat) --------------------
-/**
- * POST /api/dashboard/chat
- * body: {
- *   studentId: string | null,
- *   studentName: string | null,
- *   startDate: 'YYYY-MM-DD' | null,
- *   endDate: 'YYYY-MM-DD' | null,
- *   message: string,        // 사용자가 방금 입력한 질문
- *   history: [{ role: 'user'|'assistant', content: string }]
- * }
- *
- * 응답: { answer: string }
- */
 app.post('/api/dashboard/chat', async (req, res) => {
   const {
     studentId,
@@ -1306,7 +1330,7 @@ app.post('/api/dashboard/chat', async (req, res) => {
   try {
     // 1) 선택된 학생/기간의 로그를 Supabase에서 조회
     let logs = []
-    if (studentId && startDate && endDate) {
+    if (studentId && startDate && endDate && typeof supabase !== 'undefined') {
       let query = supabase
         .from('log_entries')
         .select(
@@ -1325,7 +1349,7 @@ app.post('/api/dashboard/chat', async (req, res) => {
       }
     }
 
-    // 2) 간단한 통계/요약 만들기 (감정 비율 등)
+    // 2) 간단한 통계/요약 만들기
     const recordCount = logs.length
     let pos = 0
     let neg = 0
@@ -1345,7 +1369,6 @@ app.post('/api/dashboard/chat', async (req, res) => {
         neu++
       }
 
-      // 프롬프트에 넣을 샘플 10개 정도만 추려서 전달
       if (idx < 10) {
         emotionSamples.push({
           date:
@@ -1365,7 +1388,6 @@ app.post('/api/dashboard/chat', async (req, res) => {
     const positivePercent =
       recordCount > 0 ? Math.round((pos / recordCount) * 100) : 0
 
-    // 이전 대화 내용을 문자열로 정리
     const historyText = (history || [])
       .map(h => `${h.role === 'user' ? '교사' : 'AI'}: ${h.content}`)
       .join('\n')
@@ -1380,7 +1402,6 @@ app.post('/api/dashboard/chat', async (req, res) => {
       emotionSamples,
     }
 
-    // 3) Gemini에 보낼 프롬프트 작성
     const systemPrompt = `
 당신은 텃밭/농장 활동 기록을 분석해서 학생의 감정, 활동, 성장 패턴을 교사가 이해하기 쉽게 설명해 주는 한국어 AI 도우미입니다.
 
@@ -1410,41 +1431,57 @@ ${historyText || '(이전 대화 없음)'}
 
     if (!process.env.GEMINI_API_KEY) {
       console.error('GEMINI_API_KEY가 설정되어 있지 않습니다.')
-      return res
-        .status(500)
-        .json({ message: 'Gemini API key not configured.' })
+      // 프론트가 상황을 이해할 수 있도록 200으로 안내 메시지 반환
+      return res.json({
+        answer:
+          '현재 서버에 Gemini API 키(GEMINI_API_KEY)가 설정되어 있지 않아 실제 AI 응답을 생성할 수 없습니다. 백엔드 .env 또는 Render 환경 변수에서 GEMINI_API_KEY를 설정한 뒤 다시 시도해 주세요.',
+      })
     }
 
-    // 4) Gemini API 호출 (REST)
+    // ✅ pro 대신 flash 모델 사용 (무료/권한 문제 줄이기)
     const geminiUrl =
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent' +
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent' +
       `?key=${process.env.GEMINI_API_KEY}`
+
+    // 한 개의 content 안에 system + user 프롬프트를 같이 넣기
+    const body = {
+      contents: [
+        {
+          role: 'user',
+          parts: [{ text: systemPrompt + '\n\n' + userPrompt }],
+        },
+      ],
+    }
 
     const geminiResponse = await fetch(geminiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [
-          { role: 'user', parts: [{ text: systemPrompt }] },
-          { role: 'user', parts: [{ text: userPrompt }] },
-        ],
-      }),
+      body: JSON.stringify(body),
     })
 
+    const text = await geminiResponse.text()
+
     if (!geminiResponse.ok) {
-      const errorText = await geminiResponse.text()
       console.error(
         'Gemini API error:',
         geminiResponse.status,
-        errorText,
+        text,
       )
+
+      // 프론트에서 에러 내용을 볼 수 있게 detail도 같이 전달
       return res.status(500).json({
         message: 'Gemini API Error',
-        detail: errorText,
+        detail: text,
       })
     }
 
-    const geminiJson = await geminiResponse.json()
+    let geminiJson = {}
+    try {
+      geminiJson = JSON.parse(text)
+    } catch {
+      geminiJson = {}
+    }
+
     const answer =
       geminiJson?.candidates?.[0]?.content?.parts
         ?.map(p => p.text || '')
@@ -1459,6 +1496,7 @@ ${historyText || '(이전 대화 없음)'}
       .json({ message: 'Chat Error', error: e.toString() })
   }
 })
+
 
 // -------------------- 리포트 API (/report-runs, /api/report-runs) --------------------
 

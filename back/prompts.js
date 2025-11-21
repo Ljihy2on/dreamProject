@@ -45,12 +45,19 @@ const PDF_TXT_EXTRACTION_PROMPT = `
 `;
 
 /**
- * 2. 리포트 프롬프트 생성기 (4가지 카테고리 대응)
+ * 2. 리포트 프롬프트 생성기
+ *    - category: 코드(full/emotion/activity_ratio/ability_growth) 또는 한글 라벨(전체 리포트/감정 변화/활동 비율 변화/능력 성장 곡선 등)
+ *    - purpose: '학부모 상담용', '학교 제출용' 등
+ *    - tone: 자연어 톤 설명
  */
 const GET_REPORT_PROMPT = (category, purpose, tone) => {
+  const safeCategory = (category || '').trim();
+  const normalized = safeCategory.toLowerCase();
+
   // 공통 기본 지침
   const baseInstruction = `
 당신은 특수교육 전문가입니다. 입력된 통계 데이터와 활동 샘플을 바탕으로 **Markdown 형식**의 리포트를 작성해 주세요.
+
 **[작성 지침]**
 1. **형식**: Markdown (제목 #, 소제목 ## 사용).
 2. **톤앤매너**: 목적은 '${purpose}', 어조는 '${tone}'입니다.
@@ -60,70 +67,72 @@ const GET_REPORT_PROMPT = (category, purpose, tone) => {
   let specificInstruction = "";
   let structureGuide = "";
 
-  // 카테고리 문자열 공백 제거 및 정규화 (매칭 오류 방지용)
-  const safeCategory = category ? category.trim() : "전체 리포트";
-
-  switch (safeCategory) {
-    case "감정 변화":
-      specificInstruction = `
+  // 카테고리 매칭 (코드 + 한글 라벨 둘 다 지원)
+  if (
+    normalized === 'emotion' ||
+    safeCategory === '감정 변화'
+  ) {
+    specificInstruction = `
 **[분석 초점: 감정 변화]**
 - 기간 동안 학생의 정서적 흐름(안정감, 불안 등)이 어떻게 변화했는지 분석하세요.
 - 특정 활동이나 시간대, 환경 요인(Trigger)과 감정의 상관관계를 파악하세요.
 - 긍정적 감정이 나타난 사례와 부정적 감정이 해소된 과정을 중점적으로 서술하세요.
-      `;
-      structureGuide = `
+    `;
+    structureGuide = `
 # 1. 감정 변화 요약
 # 2. 주요 감정 흐름 분석
 (기간 초반 vs 후반 변화 등)
 # 3. 감정 유발 요인 (Trigger) 및 반응
 # 4. 정서적 안정을 위한 제언
 # 5. 마무리
-      `;
-      break;
-
-    case "활동 유동 변화":
-      specificInstruction = `
-**[분석 초점: 활동 유동 변화]**
+    `;
+  } else if (
+    normalized === 'activity_ratio' ||
+    safeCategory === '활동 비율 변화' ||
+    safeCategory === '활동 유동 변화'
+  ) {
+    specificInstruction = `
+**[분석 초점: 활동 비율/참여 패턴 변화]**
 - 학생의 활동 참여 패턴이 어떻게 변화했는지(특정 활동 집중, 다양성 증가 등) 분석하세요.
 - 활동의 전환(전이) 과정에서의 적응도와 유연성을 평가하세요.
 - 선호 활동과 비선호 활동 간의 참여 시간 변화 추이를 서술하세요.
-      `;
-      structureGuide = `
+    `;
+    structureGuide = `
 # 1. 활동 패턴 요약
 # 2. 활동 유형별 참여 변화
 (시간 비중 변화, 새로운 활동 시도 등)
 # 3. 활동 전이 및 참여 태도 분석
 # 4. 활동 다양성 증진을 위한 제언
 # 5. 마무리
-      `;
-      break;
-
-    case "활동 능력 변화":
-      specificInstruction = `
+    `;
+  } else if (
+    normalized === 'ability_growth' ||
+    safeCategory === '활동 능력 변화' ||
+    safeCategory === '능력 성장 곡선'
+  ) {
+    specificInstruction = `
 **[분석 초점: 활동 능력 변화]**
 - 활동 수행 수준(매우 우수~도전적)의 변화 추이를 분석하세요.
 - 이전에 어려워했던(도전적) 활동에서 성취를 보인 '성장 사례'를 찾으세요.
 - 영역별(인지, 운동, 사회성 등) 능력 발달의 불균형이나 특이점을 서술하세요.
-      `;
-      structureGuide = `
+    `;
+    structureGuide = `
 # 1. 능력 성장 요약
 # 2. 영역별 수행 능력 변화 추이
 (성취도가 향상된 영역 위주)
 # 3. 주요 성취 사례 (Success Story)
 # 4. 향후 발달 목표 및 지도 방안
 # 5. 마무리
-      `;
-      break;
-
-    case "전체 리포트":
-    default:
-      specificInstruction = `
+    `;
+  } else {
+    // full / 전체 리포트 (기본)
+    specificInstruction = `
 **[분석 초점: 종합 보고서]**
 - 학생의 학교생활 전반(감정, 행동, 학습, 사회성)을 균형 있게 요약하세요.
 - 강점 위주로 서술하되, 지원이 필요한 부분도 명확히 명시하세요.
 - 모든 영역(감정, 활동, 능력)을 아우르는 통합적 관점을 유지하세요.
-      `;
-      structureGuide = `
+    `;
+    structureGuide = `
 # 1. 기본 정보
 # 2. 전체 개요
 # 3. 강점과 긍정적 변화
@@ -132,10 +141,10 @@ const GET_REPORT_PROMPT = (category, purpose, tone) => {
 # 6. 활동별 능력 분석
 # 7. 지원 제안 및 다음 단계
 # 8. 마무리 문장
-      `;
-      break;
+    `;
   }
 
+  // {input_json} 자리에 서버에서 JSON 을 그대로 넣어줄 것임
   return `
 ${baseInstruction}
 

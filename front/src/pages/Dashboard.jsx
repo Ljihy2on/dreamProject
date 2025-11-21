@@ -11,28 +11,76 @@ import {
   Tooltip,
 } from 'recharts'
 
-export default function Dashboard() {
-  // 🔹 학생 목록 (supabase)
-  const [students, setStudents] = useState([])
-  const [selectedStudentId, setSelectedStudentId] = useState('') // 처음엔 아무 학생도 선택 X
+// ---------- 헬퍼 함수들 ----------
 
-  // 🔹 기간 필터 (사용자가 직접 선택)
+// 배열 보정
+const asArray = v => (Array.isArray(v) ? v : [])
+
+// 학생 목록 응답 정리 + dedupe
+function normalizeStudentsResponse(res) {
+  let list = []
+
+  if (res && Array.isArray(res.items)) list = res.items
+  else if (Array.isArray(res)) list = res
+
+  const normalized = list
+    .map(item => {
+      const id =
+        item.id ?? item.student_id ?? item.studentId ?? item.uuid ?? null
+      const name =
+        item.name ??
+        item.student_name ??
+        item.full_name ??
+        item.display_name ??
+        '이름 없음'
+      return id ? { id: String(id), name } : null
+    })
+    .filter(Boolean)
+
+  const seen = new Set()
+  const unique = []
+  for (const s of normalized) {
+    if (!seen.has(s.id)) {
+      seen.add(s.id)
+      unique.push(s)
+    }
+  }
+  return unique
+}
+
+// 활동별 능력 분석 리스트 매핑
+function normalizeActivityAbilityList(src) {
+  const list = asArray(src)
+  return list.map(item => ({
+    id: item.id ?? item.activity_id,
+    activity: item.activity ?? item.activity_name ?? '활동',
+    date: item.date_label ?? item.date ?? '',
+    levelType: item.level_type ?? item.levelType ?? 'good',
+    levelLabel: item.level_label ?? item.levelLabel ?? '우수',
+    difficultyRatio: item.difficulty_ratio ?? item.difficultyRatio ?? 0,
+    normalRatio: item.normal_ratio ?? item.normalRatio ?? 0,
+    goodRatio: item.good_ratio ?? item.goodRatio ?? 0,
+    totalScore: item.total_score ?? item.totalScore ?? 0,
+    hours: item.hours_label ?? item.hours ?? '',
+    mainSkills: item.main_skills ?? item.mainSkills ?? [],
+  }))
+}
+
+// ---------- 메인 컴포넌트 ----------
+
+export default function Dashboard() {
+  // 학생 선택/기간 선택
+  const [students, setStudents] = useState([])
+  const [selectedStudentId, setSelectedStudentId] = useState('')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
 
-  // 🔹 실제로 조회된 조건(학생/기간)을 별도 저장
+  // 실제 조회에 사용된 조건
   const [queriedStudent, setQueriedStudent] = useState(null)
   const [queriedStartDate, setQueriedStartDate] = useState('')
   const [queriedEndDate, setQueriedEndDate] = useState('')
 
-  // 🔹 Gemini 대화 (대시보드 채팅)
-  const [isChatOpen, setIsChatOpen] = useState(false)
-  const [chatInput, setChatInput] = useState('')
-  const [chatMessages, setChatMessages] = useState([])
-  const [chatLoading, setChatLoading] = useState(false)
-  const [chatError, setChatError] = useState(null)
-
-  // 🔹 대시보드 데이터
+  // 대시보드 데이터
   const [metrics, setMetrics] = useState({
     recordCount: 0,
     positivePercent: 0,
@@ -41,41 +89,31 @@ export default function Dashboard() {
   const [activitySeries, setActivitySeries] = useState([])
   const [activityAbilityList, setActivityAbilityList] = useState([])
 
-  // 🔹 상태
+  // 공통 상태
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
-  // 🔹 모달
+  // 모달
   const [emotionModalOpen, setEmotionModalOpen] = useState(false)
   const [activityModalOpen, setActivityModalOpen] = useState(false)
 
-  // 🔹 유효성 검사
-  const isInvalidRange = startDate && endDate && startDate > endDate
+  // 채팅
+  const [isChatOpen, setIsChatOpen] = useState(false)
+  const [chatInput, setChatInput] = useState('')
+  const [chatMessages, setChatMessages] = useState([])
+  const [chatLoading, setChatLoading] = useState(false)
+  const [chatError, setChatError] = useState(null)
+
+  // ---------- 파생 값들 ----------
 
   const recordCount = metrics?.recordCount ?? 0
   const positivePercent = metrics?.positivePercent ?? 0
 
-  const emotionChartData = Array.isArray(emotionData) ? emotionData : []
+  const emotionChartData = asArray(emotionData)
+  const seriesData = asArray(activitySeries)
+  const abilityList = asArray(activityAbilityList)
 
-  // 🔹 감정 점수(0~10 스케일)로 변환 + Top5
-  const emotionScaleItems = useMemo(() => {
-    if (!emotionChartData.length) return []
-    const base = emotionChartData.slice(0, 5)
-    return base.map(item => {
-      const raw = typeof item.value === 'number' ? item.value : 0
-      const scoreFromPercent = raw > 10 ? raw / 10 : raw
-      const score10 = Math.max(
-        0,
-        Math.min(10, Math.round(scoreFromPercent * 10) / 10),
-      )
-      return { ...item, score10 }
-    })
-  }, [emotionChartData])
-
-  const seriesData = Array.isArray(activitySeries) ? activitySeries : []
-  const abilityList = Array.isArray(activityAbilityList)
-    ? activityAbilityList
-    : []
+  const isInvalidRange = startDate && endDate && startDate > endDate
 
   const selectedStudent = useMemo(
     () => students.find(s => s.id === selectedStudentId),
@@ -87,7 +125,21 @@ export default function Dashboard() {
     selectedStudent?.name ||
     (selectedStudentId ? '선택된 학생' : '해당')
 
-  // 🔹 감정 상세 모달용 보조 데이터
+  // 감정 점수(0~10) + Top5
+  const emotionScaleItems = useMemo(() => {
+    if (!emotionChartData.length) return []
+    return emotionChartData.slice(0, 5).map(item => {
+      const raw = typeof item.value === 'number' ? item.value : 0
+      const scoreFromPercent = raw > 10 ? raw / 10 : raw
+      const score10 = Math.max(
+        0,
+        Math.min(10, Math.round(scoreFromPercent * 10) / 10),
+      )
+      return { ...item, score10 }
+    })
+  }, [emotionChartData])
+
+  // 감정 상세 모달용 데이터
   const emotionDetailRows = useMemo(() => {
     if (!emotionChartData.length) return []
     const baseCount = recordCount || 100
@@ -105,12 +157,13 @@ export default function Dashboard() {
     })
   }, [emotionChartData, recordCount])
 
+  // 활동별 대표 감정 카드
   const activityEmotionCards = useMemo(() => {
     if (!abilityList.length || !emotionScaleItems.length) return []
-    const baseEmotions = emotionScaleItems
     const icons = ['🧺', '🌱', '🧹', '🔍']
+
     return abilityList.slice(0, 4).map((act, idx) => {
-      const emo = baseEmotions[idx % baseEmotions.length]
+      const emo = emotionScaleItems[idx % emotionScaleItems.length]
       return {
         id: act.id,
         icon: icons[idx % icons.length],
@@ -122,6 +175,7 @@ export default function Dashboard() {
     })
   }, [abilityList, emotionScaleItems])
 
+  // 감정 요약 문장
   const emotionSummaryText = useMemo(() => {
     if (!emotionScaleItems.length) {
       return `${queriedStudentLabel} 학생의 감정 데이터가 아직 충분하지 않습니다.`
@@ -133,6 +187,7 @@ export default function Dashboard() {
     )}/10 수준으로, 안정적인 정서 상태가 유지되고 있습니다.`
   }, [emotionScaleItems, positivePercent, queriedStudentLabel])
 
+  // 활동별 감정 요약 문장
   const activityEmotionSummaryText = useMemo(() => {
     if (!activityEmotionCards.length) {
       return `${queriedStudentLabel} 학생의 활동별 감정 데이터가 아직 충분하지 않습니다.`
@@ -146,46 +201,25 @@ export default function Dashboard() {
     )}/10). 수확·관리·관찰 등 다양한 활동에서 전반적으로 긍정적인 감정이 고르게 나타나고 있습니다.`
   }, [activityEmotionCards, queriedStudentLabel])
 
-  // 🔹 학생 목록 가져오기 (supabase)
+  // 활동별 요약 카드 (매우 우수/우수/도전)
+  const excellentCount = abilityList.filter(
+    a => a.levelType === 'excellent',
+  ).length
+  const goodCount = abilityList.filter(a => a.levelType === 'good').length
+  const challengeCount = abilityList.filter(
+    a => a.levelType === 'challenge',
+  ).length
+
+  // ---------- 데이터 로딩 ----------
+
   async function fetchStudents() {
     try {
       setError(null)
       const res = await apiFetch('/api/students?limit=1000&offset=0', {
         method: 'GET',
       })
-
-      let list = []
-      if (res && Array.isArray(res.items)) list = res.items
-      else if (Array.isArray(res)) list = res
-
-      // supabase 쿼리가 같은 학생을 여러 번 반환해도
-      // 👉 id 기준으로 한 번만 나오도록 dedupe
-      const normalized = (list || [])
-        .map(item => {
-          const id =
-            item.id ??
-            item.student_id ??
-            item.studentId ??
-            item.uuid ??
-            null
-          const name =
-            item.name ?? item.student_name ?? item.full_name ?? item.display_name ?? '이름 없음'
-          return id ? { id: String(id), name } : null
-        })
-        .filter(Boolean)
-
-      const seen = new Set()
-      const unique = []
-      for (const s of normalized) {
-        if (!seen.has(s.id)) {
-          seen.add(s.id)
-          unique.push(s)
-        }
-      }
-
+      const unique = normalizeStudentsResponse(res)
       setStudents(unique)
-      // ❌ 자동으로 첫 번째 학생 선택하지 않음
-      //    사용자가 직접 클릭해서 선택해야 함
     } catch (e) {
       console.error(e)
       setError('학생 목록을 불러오는 중 오류가 발생했습니다.')
@@ -194,7 +228,6 @@ export default function Dashboard() {
     }
   }
 
-  // 🔹 특정 학생 + 기간의 대시보드 데이터 가져오기
   async function fetchDashboardData({ studentId, startDate, endDate }) {
     if (!studentId || !startDate || !endDate) return
 
@@ -207,46 +240,17 @@ export default function Dashboard() {
       params.set('startDate', startDate)
       params.set('endDate', endDate)
 
-      // 백엔드: 이 파라미터로 supabase에서 조회
       const res = await apiFetch(`/api/dashboard?${params.toString()}`)
-
       if (!res) throw new Error('대시보드 데이터를 불러오지 못했습니다.')
 
       setMetrics({
         recordCount: res.metrics?.recordCount ?? 0,
         positivePercent: res.metrics?.positivePercent ?? 0,
       })
+      setEmotionData(asArray(res.emotionDistribution))
+      setActivitySeries(asArray(res.activitySeries))
+      setActivityAbilityList(normalizeActivityAbilityList(res.activityAbilityList))
 
-      setEmotionData(
-        Array.isArray(res.emotionDistribution)
-          ? res.emotionDistribution
-          : [],
-      )
-      setActivitySeries(
-        Array.isArray(res.activitySeries) ? res.activitySeries : [],
-      )
-
-      if (Array.isArray(res.activityAbilityList)) {
-        setActivityAbilityList(
-          res.activityAbilityList.map(item => ({
-            id: item.id ?? item.activity_id,
-            activity: item.activity ?? item.activity_name ?? '활동',
-            date: item.date_label ?? item.date ?? '',
-            levelType: item.level_type ?? item.levelType ?? 'good',
-            levelLabel: item.level_label ?? item.levelLabel ?? '우수',
-            difficultyRatio: item.difficulty_ratio ?? item.difficultyRatio ?? 0,
-            normalRatio: item.normal_ratio ?? item.normalRatio ?? 0,
-            goodRatio: item.good_ratio ?? item.goodRatio ?? 0,
-            totalScore: item.total_score ?? item.totalScore ?? 0,
-            hours: item.hours_label ?? item.hours ?? '',
-            mainSkills: item.main_skills ?? item.mainSkills ?? [],
-          })),
-        )
-      } else {
-        setActivityAbilityList([])
-      }
-
-      // 실제 조회에 사용된 학생/기간 저장
       const qStudent =
         students.find(s => s.id === studentId) || selectedStudent || null
       setQueriedStudent(qStudent)
@@ -264,13 +268,13 @@ export default function Dashboard() {
     }
   }
 
-  // 🔹 첫 진입 시: 학생 목록만 가져오기
   useEffect(() => {
     fetchStudents()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // 🔹 검색 버튼 클릭
+  // ---------- 이벤트 핸들러 ----------
+
   function handleSearch(e) {
     e.preventDefault()
     if (!selectedStudentId) {
@@ -293,43 +297,36 @@ export default function Dashboard() {
     })
   }
 
-  // 🔹 대시보드 Gemini 채팅 열기
-// 🔹 대시보드 Gemini 채팅 열기 / 닫기 (토글)
-function handleOpenChat() {
-  // 1) 채팅창이 떠 있을 때 버튼을 누르면 닫기
-  if (isChatOpen) {
-    setIsChatOpen(false)
-    return
+  // 채팅 토글
+  function handleOpenChat() {
+    if (isChatOpen) {
+      setIsChatOpen(false)
+      return
+    }
+
+    if (!queriedStudent || !queriedStartDate || !queriedEndDate) {
+      alert('먼저 학생과 기간을 선택해 검색을 완료한 뒤에 채팅을 사용할 수 있습니다.')
+      return
+    }
+
+    setChatError(null)
+    setIsChatOpen(true)
+
+    if (!chatMessages.length) {
+      setChatMessages([
+        {
+          id: 'intro',
+          role: 'assistant',
+          content: `${queriedStudent.name} 학생의 ${queriedStartDate} ~ ${queriedEndDate} 기록을 기반으로 대화를 도와드릴게요.\n무엇이 궁금하신가요?`,
+        },
+      ])
+    }
   }
 
-  // 2) 채팅창이 닫혀 있을 때는 기존처럼 열기 + 검증
-  if (!queriedStudent || !queriedStartDate || !queriedEndDate) {
-    alert('먼저 학생과 기간을 선택해 검색을 완료한 뒤에 채팅을 사용할 수 있습니다.')
-    return
-  }
-
-  setChatError(null)
-  setIsChatOpen(true)
-
-  // 처음 열 때만 안내 메시지
-  if (!chatMessages.length) {
-    setChatMessages([
-      {
-        id: 'intro',
-        role: 'assistant',
-        content: `${queriedStudent.name} 학생의 ${queriedStartDate} ~ ${queriedEndDate} 기록을 기반으로 대화를 도와드릴게요.\n무엇이 궁금하신가요?`,
-      },
-    ])
-  }
-}
-
-
-  // 🔹 채팅 닫기
   function handleCloseChat() {
     setIsChatOpen(false)
   }
 
-  // 🔹 Gemini에게 질문 보내기
   async function handleChatSubmit(e) {
     e.preventDefault()
     if (!chatInput.trim()) return
@@ -364,7 +361,6 @@ function handleOpenChat() {
         })),
       }
 
-      // 🔸 백엔드에서 이 엔드포인트를 Gemini API와 연결해 주세요.
       const res = await apiFetch('/api/dashboard/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -400,13 +396,7 @@ function handleOpenChat() {
     }
   }
 
-  const excellentCount = abilityList.filter(
-    a => a.levelType === 'excellent',
-  ).length
-  const goodCount = abilityList.filter(a => a.levelType === 'good').length
-  const challengeCount = abilityList.filter(
-    a => a.levelType === 'challenge',
-  ).length
+  // ---------- JSX ----------
 
   return (
     <Layout title="">
@@ -488,10 +478,7 @@ function handleOpenChat() {
               </div>
 
               {/* 오른쪽: 기간 선택 패널 */}
-              <form
-                className="filter-calendar-panel"
-                onSubmit={handleSearch}
-              >
+              <form className="filter-calendar-panel" onSubmit={handleSearch}>
                 <div className="calendar-card-header">
                   <div>
                     <div className="card-title">기간 선택</div>
@@ -555,9 +542,7 @@ function handleOpenChat() {
             <div className="emotion-scale-header">
               <div>
                 <div className="emotion-scale-title">
-                  <span role="img" aria-label="감정">
-                    😺
-                  </span>
+                  <span role="img" aria-label="감정" />
                   <span>감정 척도</span>
                 </div>
                 <div className="emotion-scale-subtitle">
@@ -622,9 +607,7 @@ function handleOpenChat() {
                 {activityEmotionCards.map(card => (
                   <div key={card.id} className="activity-emotion-card">
                     <div className="activity-emotion-card-top">
-                      <div className="activity-emotion-icon">
-                        {card.icon}
-                      </div>
+                      <div className="activity-emotion-icon">{card.icon}</div>
                       <div>
                         <div className="activity-emotion-activity">
                           {card.activity}
@@ -691,9 +674,7 @@ function handleOpenChat() {
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="date" />
                   <YAxis unit="분" />
-                  <Tooltip
-                    formatter={value => [`${value}분`, '활동 시간']}
-                  />
+                  <Tooltip formatter={value => [`${value}분`, '활동 시간']} />
                   <Bar
                     dataKey="minutes"
                     fill="#3b82f6"
@@ -1129,9 +1110,7 @@ function handleOpenChat() {
                 </div>
               )}
               {chatError && (
-                <div className="chat-error-text">
-                  {chatError}
-                </div>
+                <div className="chat-error-text">{chatError}</div>
               )}
 
               <form
