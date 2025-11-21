@@ -1,7 +1,41 @@
 // src/pages/Login.jsx
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { apiFetch } from '../lib/api.js'
+
+// 🔹 환경변수에서 백엔드 기본 URL 가져오기
+// 예: https://dreamproject-ia6s.onrender.com
+const API_BASE = (import.meta.env.VITE_API_BAS || '').replace(/\/+$/, '')
+
+// 🔹 이 파일에서만 쓸 간단한 fetch 래퍼
+async function apiRequest(path, options = {}) {
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`
+  const url = `${API_BASE}${normalizedPath}`
+
+  const res = await fetch(url, {
+    // 기본 옵션 합치기
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(options.headers || {}),
+    },
+  })
+
+  let body = null
+  try {
+    body = await res.json()
+  } catch {
+    // JSON 아니면 body는 null로 둠
+  }
+
+  if (!res.ok) {
+    const error = new Error(body?.message || `Request failed: ${res.status}`)
+    error.status = res.status
+    error.body = body
+    throw error
+  }
+
+  return body
+}
 
 // .env 에서 VITE_DEMO_MODE=true 로 두면
 // 백엔드가 없어도 데모 로그인 허용
@@ -46,9 +80,10 @@ function SignupModal({ onClose }) {
 
     try {
       setLoading(true)
-      await apiFetch('/auth/signup', {
+
+      // ✅ Render에 올려둔 백엔드로 직접 호출
+      await apiRequest('/auth/signup', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       })
 
@@ -200,10 +235,9 @@ export default function Login() {
     try {
       setLoading(true)
 
-      // 1) 기본: 실제 백엔드 로그인
-      const res = await apiFetch('/auth/login', {
+      // ✅ Render 백엔드로 직접 로그인 요청
+      const res = await apiRequest('/auth/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
       })
 
@@ -231,7 +265,7 @@ export default function Login() {
         msg.includes('Failed to fetch') ||
         msg.includes('NetworkError')
 
-      // 2) 데모 모드 + 백엔드 없음/404 → 데모 로그인
+      // 데모 모드 + 백엔드 없음/404 → 데모 로그인
       if (DEMO_MODE && isBackendMissing) {
         const demoUser = {
           id: 'demo-user-id',
