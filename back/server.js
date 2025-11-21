@@ -13,7 +13,7 @@ const upload = multer({ storage: multer.memoryStorage() })
 // JSON 파싱
 app.use(express.json())
 
-// CORS 허용 (프론트: http://localhost:5173)
+// CORS 허용
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*')
   res.header(
@@ -38,17 +38,11 @@ app.get('/', (req, res) => {
 
 // -------------------- 로그인 (/auth/login) --------------------
 /**
- * 프론트: apiFetch('/auth/login', {...})
- * API_BASE 가 http://localhost:3000 이면 실제 요청 경로는
- *   POST http://localhost:3000/auth/login
- *
- * - email 기반으로 Supabase auth.users 에서 유저를 찾고
- * - 개발용 토큰과 함께 user 객체 반환
- * - 비밀번호 검증은 생략 (로컬 테스트용)
+ * 프론트: POST {API_BASE}/auth/login 또는 {API_BASE}/api/auth/login
  */
 app.post(['/auth/login', '/api/auth/login'], async (req, res) => {
   try {
-    const { email, password } = req.body || {}
+    const { email } = req.body || {}
 
     if (!email) {
       return res
@@ -64,18 +58,18 @@ app.post(['/auth/login', '/api/auth/login'], async (req, res) => {
     }
 
     const user =
-      data?.users?.find(u => (u.email || '').toLowerCase() === email.toLowerCase()) ||
-      null
+      data?.users?.find(
+        u => (u.email || '').toLowerCase() === email.toLowerCase(),
+      ) || null
 
     if (!user) {
       return res.status(401).json({
         message:
-          '해당 이메일의 계정을 찾을 수 없습니다. Supabase Auth에서 user@example.com 유저를 먼저 생성해 주세요.',
+          '해당 이메일의 계정을 찾을 수 없습니다. Supabase Auth에서 유저를 먼저 생성해 주세요.',
         code: 'USER_NOT_FOUND',
       })
     }
 
-    // 실제 비밀번호 검증은 생략하고, UI 테스트용 토큰/유저 정보만 반환
     const devUser = {
       id: user.id,
       email: user.email,
@@ -95,13 +89,13 @@ app.post(['/auth/login', '/api/auth/login'], async (req, res) => {
   }
 })
 
-// -------------------- 업로드 API (/uploads) --------------------
+// -------------------- 업로드 API (/uploads, /api/uploads) --------------------
 /**
- * POST /uploads
+ * POST /uploads, /api/uploads
  * - 프론트에서 FormData 로 file 하나만 보냄
  * - Supabase ingest_uploads 에 메타데이터만 기록 (Storage 업로드는 생략)
  */
-app.post('/uploads', upload.single('file'), async (req, res) => {
+app.post(['/uploads', '/api/uploads'], upload.single('file'), async (req, res) => {
   try {
     const file = req.file
     if (!file) {
@@ -145,11 +139,11 @@ app.post('/uploads', upload.single('file'), async (req, res) => {
 })
 
 /**
- * GET /uploads
+ * GET /uploads, /api/uploads
  * - ingest_uploads + students 를 조합해서
  *   UploadPage.jsx 의 hydrateUpload 가 이해할 수 있는 형태로 반환
  */
-app.get('/uploads', async (req, res) => {
+app.get(['/uploads', '/api/uploads'], async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('ingest_uploads')
@@ -197,10 +191,10 @@ app.get('/uploads', async (req, res) => {
 })
 
 /**
- * GET /uploads/:id
+ * GET /uploads/:id, /api/uploads/:id
  * - 단일 업로드 정보
  */
-app.get('/uploads/:id', async (req, res) => {
+app.get(['/uploads/:id', '/api/uploads/:id'], async (req, res) => {
   const { id } = req.params
   try {
     const { data, error } = await supabase
@@ -218,6 +212,104 @@ app.get('/uploads/:id', async (req, res) => {
   } catch (e) {
     console.error('GET /uploads/:id 에러:', e)
     res.status(500).json({ message: 'Server Error', error: e.toString() })
+  }
+})
+
+// -------------------- 업로드 로그 저장 (/uploads/:id/log) --------------------
+/**
+ * POST /uploads/:id/log, /api/uploads/:id/log
+ *
+ * payload 형식 (UploadPage.jsx 기준):
+ * {
+ *   upload_id: "업로드 UUID",
+ *   file_name: "파일명.pdf",
+ *   raw_text: "원본/정제 텍스트",
+ *   log_entries: [
+ *     {
+ *       student_id: "...",
+ *       student_name: "...",   // 프론트 표시용 (DB에는 안 씀)
+ *       log_date: "2025-11-21",
+ *       emotion_tag: "기쁨",
+ *       emotion_tags: ["기쁨", "안정"],  // 아직은 DB에 직접 안 씀
+ *       activity_tags: ["미술", "글쓰기"],
+ *       log_content: "...",
+ *       related_metrics: { ... } // jsonb
+ *     },
+ *     ...
+ *   ]
+ * }
+ */
+app.post(['/uploads/:id/log', '/api/uploads/:id/log'], async (req, res) => {
+  const { id } = req.params
+  const { upload_id, file_name, raw_text, log_entries } = req.body || {}
+
+  if (!Array.isArray(log_entries) || log_entries.length === 0) {
+    return res
+      .status(400)
+      .json({ message: 'log_entries 배열이 필요합니다.' })
+  }
+
+  try {
+    // 1) log_entries 테이블에 기록할 값 정리
+    const rows = log_entries
+      .filter(e => e && e.student_id)
+      .map(e => ({
+        log_date: e.log_date || new Date().toISOString().slice(0, 10),
+        student_id: e.student_id,
+        emotion_tag: e.emotion_tag || null,
+        activity_tags: e.activity_tags || null, // text[]
+        log_content: e.log_content || null,
+        related_metrics: e.related_metrics || null, // jsonb
+        source_file_path: file_name || null,
+      }))
+
+    if (rows.length === 0) {
+      return res
+        .status(400)
+        .json({ message: '학생 정보가 있는 기록이 없습니다.' })
+    }
+
+    // 2) log_entries 여러 건 insert
+    const { data: inserted, error: insertErr } = await supabase
+      .from('log_entries')
+      .insert(rows)
+      .select()
+
+    if (insertErr) {
+      console.error('log_entries insert 에러:', insertErr)
+      return res
+        .status(500)
+        .json({ message: 'log_entries 저장 중 오류', error: insertErr })
+    }
+
+    // 3) ingest_uploads 에 대표 student_id / 상태 업데이트
+    const firstStudentId = rows[0].student_id
+
+    const { error: upErr } = await supabase
+      .from('ingest_uploads')
+      .update({
+        student_id: firstStudentId,
+        status: 'success',
+        progress: 100,
+      })
+      .eq('id', id)
+
+    if (upErr) {
+      console.error('ingest_uploads 업데이트 에러:', upErr)
+      // 치명적이진 않으니 에러 로그만 남기고 계속 진행
+    }
+
+    return res.status(201).json({
+      upload_id: id,
+      file_name,
+      raw_text,
+      log_entries: inserted,
+    })
+  } catch (e) {
+    console.error('POST /uploads/:id/log 에러:', e)
+    return res
+      .status(500)
+      .json({ message: 'Upload log save error', error: e.toString() })
   }
 })
 
@@ -275,7 +367,6 @@ app.get('/log_entries', async (req, res) => {
 /**
  * POST /rest/v1/log_entries
  * - body 전체를 log_entries 에 insert(1건) 하는 간단 프록시
- * - UploadPage.jsx 의 handleSaveLogEntry 에서 사용
  */
 app.post('/rest/v1/log_entries', async (req, res) => {
   try {
@@ -295,7 +386,7 @@ app.post('/rest/v1/log_entries', async (req, res) => {
     res.status(201).json(data)
   } catch (e) {
     console.error('POST /rest/v1/log_entries 에러:', e)
-    res.status(500).json({ message: 'Server Error', error: e.toString() })
+    res.status(500).json({ message: 'DB Error', error: e.toString() })
   }
 })
 
@@ -385,7 +476,7 @@ app.post('/rest/v1/tags', async (req, res) => {
   }
 })
 
-// -------------------- 기존 /api/students, /api/log_entries 유지 --------------------
+// -------------------- /api/students, /api/log_entries --------------------
 // (Dashboard, StudentList 페이지에서 사용)
 
 app.get('/api/students', async (req, res) => {
@@ -499,7 +590,7 @@ app.delete('/api/students/:id', async (req, res) => {
   res.status(204).send()
 })
 
-// log_entries 목록/상세/추가/수정/삭제 (기존 /api/log_entries 라우트 유지)
+// log_entries 목록/상세/추가/수정/삭제
 app.get('/api/log_entries', async (req, res) => {
   const {
     student_id,
@@ -557,51 +648,6 @@ app.get('/api/log_entries/:id', async (req, res) => {
   }
 
   res.json(data)
-})
-
-app.post('/api/log_entries', async (req, res) => {
-  const {
-    log_date,
-    student_id,
-    observer_id,
-    emotion_tag,
-    activity_tags,
-    log_content,
-    related_metrics,
-    status = 'success',
-    source_file_path,
-  } = req.body || {}
-
-  if (!log_date || !student_id) {
-    return res
-      .status(400)
-      .json({ message: 'log_date와 student_id는 필수입니다.' })
-  }
-
-  const { data, error } = await supabase
-    .from('log_entries')
-    .insert([
-      {
-        log_date,
-        student_id,
-        observer_id,
-        emotion_tag,
-        activity_tags,
-        log_content,
-        related_metrics,
-        status,
-        source_file_path,
-      },
-    ])
-    .select()
-    .single()
-
-  if (error) {
-    console.error('log_entries 추가 에러:', error)
-    return res.status(500).json({ message: 'DB Error', error })
-  }
-
-  res.status(201).json(data)
 })
 
 app.patch('/api/log_entries/:id', async (req, res) => {

@@ -3,13 +3,18 @@ import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 // 🔹 환경변수에서 백엔드 기본 URL 가져오기
-// 예: https://dreamproject-ia6s.onrender.com
-const API_BASE = (import.meta.env.VITE_API_BAS || '').replace(/\/+$/, '')
+// - VITE_API_BAS / VITE_API_BASE 가 있으면 그걸 사용
+// - 없으면 Render에 올려둔 백엔드 주소로 기본값 사용
+const API_BASE = (
+  import.meta.env.VITE_API_BAS ||
+  import.meta.env.VITE_API_BASE ||
+  'https://dreamproject-ia6s.onrender.com'
+).replace(/\/+$/, '')
 
 // 🔹 이 파일에서만 쓸 간단한 fetch 래퍼
 async function apiRequest(path, options = {}) {
   const normalizedPath = path.startsWith('/') ? path : `/${path}`
-  const url = `${API_BASE}${normalizedPath}`
+  const url = `${API_BASE}${normalizedPath}` // 항상 백엔드 도메인 기준으로 요청
 
   const res = await fetch(url, {
     // 기본 옵션 합치기
@@ -82,6 +87,7 @@ function SignupModal({ onClose }) {
       setLoading(true)
 
       // ✅ Render에 올려둔 백엔드로 직접 호출
+      //    최종 URL: https://dreamproject-ia6s.onrender.com/auth/signup (기본값 기준)
       await apiRequest('/auth/signup', {
         method: 'POST',
         body: JSON.stringify(payload),
@@ -236,6 +242,7 @@ export default function Login() {
       setLoading(true)
 
       // ✅ Render 백엔드로 직접 로그인 요청
+      //    최종 URL: https://dreamproject-ia6s.onrender.com/auth/login (기본값 기준)
       const res = await apiRequest('/auth/login', {
         method: 'POST',
         body: JSON.stringify({ email, password }),
