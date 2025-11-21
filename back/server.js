@@ -139,9 +139,7 @@ app.post(
       res.status(201).json(data)
     } catch (e) {
       console.error('POST /uploads 에러:', e)
-      res
-        .status(500)
-        .json({ message: 'Upload Error', error: e.toString() })
+      res.status(500).json({ message: 'Upload Error', error: e.toString() })
     }
   },
 )
@@ -230,6 +228,24 @@ app.get(['/uploads/:id', '/api/uploads/:id'], async (req, res) => {
 // -------------------- 업로드 로그 저장 (/uploads/:id/log) --------------------
 /**
  * POST /uploads/:id/log, /api/uploads/:id/log
+ *
+ * body 예시:
+ * {
+ *   upload_id: "...",
+ *   file_name: "파일명.pdf",
+ *   raw_text: "텍스트 전문",
+ *   log_entries: [
+ *     {
+ *       student_id: "...",
+ *       log_date: "2025-11-21",
+ *       emotion_tag: "기쁨",
+ *       activity_tags: ["미술", "글쓰기"],
+ *       log_content: "...",
+ *       related_metrics: { score: 85, minutes: 30 }
+ *     },
+ *     ...
+ *   ]
+ * }
  */
 app.post(['/uploads/:id/log', '/api/uploads/:id/log'], async (req, res) => {
   const { id } = req.params
@@ -248,9 +264,9 @@ app.post(['/uploads/:id/log', '/api/uploads/:id/log'], async (req, res) => {
         log_date: e.log_date || new Date().toISOString().slice(0, 10),
         student_id: e.student_id,
         emotion_tag: e.emotion_tag || null,
-        activity_tags: e.activity_tags || null,
+        activity_tags: e.activity_tags || null, // text[]
         log_content: e.log_content || null,
-        related_metrics: e.related_metrics || null,
+        related_metrics: e.related_metrics || null, // jsonb
         source_file_path: file_name || null,
       }))
 
@@ -306,6 +322,7 @@ app.post(['/uploads/:id/log', '/api/uploads/:id/log'], async (req, res) => {
 // -------------------- log_entries 조회 (UploadPage 상세용) --------------------
 /**
  * GET /log_entries?upload_id=...
+ * - upload_id 로 ingest_uploads 를 찾고, 해당 student_id 의 로그를 최근 순으로 반환
  */
 app.get('/log_entries', async (req, res) => {
   const { upload_id } = req.query
@@ -355,6 +372,10 @@ app.get('/log_entries', async (req, res) => {
 
 // -------------------- Supabase 스타일 REST 프록시 --------------------
 
+/**
+ * POST /rest/v1/log_entries
+ * - body 전체를 log_entries 에 insert(1건)
+ */
 app.post('/rest/v1/log_entries', async (req, res) => {
   try {
     const body = req.body || {}
@@ -379,6 +400,10 @@ app.post('/rest/v1/log_entries', async (req, res) => {
   }
 })
 
+/**
+ * POST /rest/v1/log_entry_tags
+ * - body: [{ log_entry_id, tag_id }, ...]
+ */
 app.post('/rest/v1/log_entry_tags', async (req, res) => {
   try {
     const rows = Array.isArray(req.body) ? req.body : []
@@ -405,6 +430,10 @@ app.post('/rest/v1/log_entry_tags', async (req, res) => {
   }
 })
 
+/**
+ * GET /rest/v1/tags?select=*
+ * - 감정 키워드 전체 조회용 간단 프록시
+ */
 app.get('/rest/v1/tags', async (req, res) => {
   try {
     const { data, error } = await supabase
@@ -432,8 +461,548 @@ app.get('/rest/v1/tags', async (req, res) => {
   }
 })
 
+/**
+ * POST /rest/v1/tags
+ * - 새로운 감정 키워드 추가
+ */
 app.post('/rest/v1/tags', async (req, res) => {
   try {
     const { name } = req.body || {}
- 
-::contentReference[oaicite:1]{index=1}
+    if (!name) {
+      return res.status(400).json({ message: 'name 필드가 필요합니다.' })
+    }
+
+    const { data, error } = await supabase
+      .from('tags')
+      .insert([{ name }])
+      .select()
+      .single()
+
+    if (error) {
+      console.error('tags insert 에러:', error)
+      return res.status(500).json({ message: 'DB Error', error })
+    }
+
+    res.status(201).json(data)
+  } catch (e) {
+    console.error('POST /rest/v1/tags 에러:', e)
+    res
+      .status(500)
+      .json({ message: 'Server Error', error: e.toString() })
+  }
+})
+
+// -------------------- /api/students, /api/log_entries --------------------
+// (Dashboard, StudentList 페이지에서 사용)
+
+app.get('/api/students', async (req, res) => {
+  const { status, limit = 50, offset = 0 } = req.query
+
+  let query = supabase
+    .from('students')
+    .select('*', { count: 'exact' })
+    .order('created_at', { ascending: true })
+    .range(Number(offset), Number(offset) + Number(limit) - 1)
+
+  if (status) {
+    query = query.eq('status', status)
+  }
+
+  const { data, error, count } = await query
+
+  if (error) {
+    console.error('students 목록 조회 에러:', error)
+    return res.status(500).json({ message: 'DB Error', error })
+  }
+
+  res.json({
+    count,
+    items: data,
+  })
+})
+
+app.get('/api/students/:id', async (req, res) => {
+  const { id } = req.params
+
+  const { data, error } = await supabase
+    .from('students')
+    .select('*')
+    .eq('id', id)
+    .single()
+
+  if (error || !data) {
+    console.error('students 상세 조회 에러:', error)
+    return res.status(404).json({ message: '학생을 찾을 수 없습니다.', error })
+  }
+
+  res.json(data)
+})
+
+// StudentDetail 에서 사용하는 더미용(또는 확장용) 엔드포인트
+app.get('/students/:id/activities', async (req, res) => {
+  const { id } = req.params
+  try {
+    const { data, error } = await supabase
+      .from('log_entries')
+      .select('*')
+      .eq('student_id', id)
+      .order('log_date', { ascending: false })
+      .limit(50)
+
+    if (error) {
+      console.error('students/:id/activities 조회 에러:', error)
+      return res.status(500).json({ message: 'DB Error', error })
+    }
+
+    res.json(data || [])
+  } catch (e) {
+    console.error('GET /students/:id/activities 에러:', e)
+    res
+      .status(500)
+      .json({ message: 'Server Error', error: e.toString() })
+  }
+})
+
+app.post('/api/students', async (req, res) => {
+  const { name, status = '재학중', admission_date, birth_date, notes } = req.body
+
+  if (!name) {
+    return res.status(400).json({ message: 'name은 필수입니다.' })
+  }
+
+  const { data, error } = await supabase
+    .from('students')
+    .insert([
+      {
+        name,
+        status,
+        admission_date,
+        birth_date,
+        notes,
+      },
+    ])
+    .select()
+    .single()
+
+  if (error) {
+    console.error('students 추가 에러:', error)
+    return res.status(500).json({ message: 'DB Error', error })
+  }
+
+  res.status(201).json(data)
+})
+
+app.patch('/api/students/:id', async (req, res) => {
+  const { id } = req.params
+  const { name, status, admission_date, birth_date, notes } = req.body
+
+  const updateData = {}
+  if (name !== undefined) updateData.name = name
+  if (status !== undefined) updateData.status = status
+  if (admission_date !== undefined) updateData.admission_date = admission_date
+  if (birth_date !== undefined) updateData.birth_date = birth_date
+  if (notes !== undefined) updateData.notes = notes
+
+  const { data, error } = await supabase
+    .from('students')
+    .update(updateData)
+    .eq('id', id)
+    .select()
+    .single()
+
+  if (error) {
+    console.error('students 수정 에러:', error)
+    return res.status(500).json({ message: 'DB Error', error })
+  }
+
+  res.json(data)
+})
+
+app.delete('/api/students/:id', async (req, res) => {
+  const { id } = req.params
+
+  const { error } = await supabase.from('students').delete().eq('id', id)
+
+  if (error) {
+    console.error('students 삭제 에러:', error)
+    return res.status(500).json({ message: 'DB Error', error })
+  }
+
+  res.status(204).send()
+})
+
+// log_entries 목록/상세/추가/수정/삭제
+app.get('/api/log_entries', async (req, res) => {
+  const {
+    student_id,
+    from, // 시작 날짜
+    to, // 종료 날짜
+    status,
+    limit = 50,
+    offset = 0,
+  } = req.query
+
+  let query = supabase
+    .from('log_entries')
+    .select('*', { count: 'exact' })
+    .order('log_date', { ascending: true })
+    .range(Number(offset), Number(offset) + Number(limit) - 1)
+
+  if (student_id) {
+    query = query.eq('student_id', student_id)
+  }
+  if (from) {
+    query = query.gte('log_date', from)
+  }
+  if (to) {
+    query = query.lte('log_date', to)
+  }
+  if (status) {
+    query = query.eq('status', status)
+  }
+
+  const { data, error, count } = await query
+
+  if (error) {
+    console.error('log_entries 목록 조회 에러:', error)
+    return res.status(500).json({ message: 'DB Error', error })
+  }
+
+  res.json({
+    count,
+    items: data,
+  })
+})
+
+app.get('/api/log_entries/:id', async (req, res) => {
+  const { id } = req.params
+
+  const { data, error } = await supabase
+    .from('log_entries')
+    .select('*')
+    .eq('id', id)
+    .single()
+
+  if (error || !data) {
+    console.error('log_entries 상세 조회 에러:', error)
+    return res.status(404).json({ message: '기록을 찾을 수 없습니다.', error })
+  }
+
+  res.json(data)
+})
+
+app.patch('/api/log_entries/:id', async (req, res) => {
+  const { id } = req.params
+  const {
+    log_date,
+    student_id,
+    observer_id,
+    emotion_tag,
+    activity_tags,
+    log_content,
+    related_metrics,
+    status,
+    source_file_path,
+  } = req.body
+
+  const updateData = {}
+  if (log_date !== undefined) updateData.log_date = log_date
+  if (student_id !== undefined) updateData.student_id = student_id
+  if (observer_id !== undefined) updateData.observer_id = observer_id
+  if (emotion_tag !== undefined) updateData.emotion_tag = emotion_tag
+  if (activity_tags !== undefined) updateData.activity_tags = activity_tags
+  if (log_content !== undefined) updateData.log_content = log_content
+  if (related_metrics !== undefined) updateData.related_metrics = related_metrics
+  if (status !== undefined) updateData.status = status
+  if (source_file_path !== undefined) updateData.source_file_path = source_file_path
+
+  const { data, error } = await supabase
+    .from('log_entries')
+    .update(updateData)
+    .eq('id', id)
+    .select()
+    .single()
+
+  if (error) {
+    console.error('log_entries 수정 에러:', error)
+    return res.status(500).json({ message: 'DB Error', error })
+  }
+
+  res.json(data)
+})
+
+app.delete('/api/log_entries/:id', async (req, res) => {
+  const { id } = req.params
+
+  const { error } = await supabase.from('log_entries').delete().eq('id', id)
+
+  if (error) {
+    console.error('log_entries 삭제 에러:', error)
+    return res.status(500).json({ message: 'DB Error', error })
+  }
+
+  res.status(204).send()
+})
+
+// -------------------- 대시보드 집계 API (/api/dashboard) --------------------
+/**
+ * GET /api/dashboard?studentId=...&from=YYYY-MM-DD&to=YYYY-MM-DD
+ *
+ * Dashboard.jsx 에서 사용
+ */
+app.get('/api/dashboard', async (req, res) => {
+  const { studentId, from, to } = req.query
+
+  try {
+    let query = supabase
+      .from('log_entries')
+      .select('log_date, emotion_tag, related_metrics, activity_tags, created_at')
+
+    if (studentId) {
+      query = query.eq('student_id', studentId)
+    }
+    if (from) {
+      query = query.gte('log_date', from)
+    }
+    if (to) {
+      query = query.lte('log_date', to)
+    }
+
+    const { data, error } = await query
+
+    if (error) {
+      console.error('GET /api/dashboard DB 에러:', error)
+      return res.status(500).json({ message: 'DB Error', error })
+    }
+
+    const logs = data || []
+    const recordCount = logs.length
+
+    // ---- 감정 분포 (긍정/부정/중립 단순 분류) ----
+    let pos = 0
+    let neg = 0
+    let neu = 0
+
+    logs.forEach(l => {
+      const tag = (l.emotion_tag || '').toString()
+
+      if (!tag) {
+        neu++
+        return
+      }
+
+      if (/(기쁨|행복|만족|즐거움|긍정|편안)/.test(tag)) {
+        pos++
+      } else if (/(불안|걱정|우울|슬픔|화|짜증|분노|부정)/.test(tag)) {
+        neg++
+      } else {
+        neu++
+      }
+    })
+
+    const positivePercent =
+      recordCount > 0 ? Math.round((pos / recordCount) * 100) : 0
+
+    const emotionDistribution = [
+      { name: '긍정', value: pos },
+      { name: '부정', value: neg },
+      { name: '중립', value: neu },
+    ]
+
+    // ---- 날짜별 활동 시간 ----
+    const byDate = {}
+    logs.forEach(l => {
+      const date =
+        l.log_date ||
+        (l.created_at ? String(l.created_at).slice(0, 10) : null)
+      if (!date) return
+
+      const rm = l.related_metrics || {}
+      const minutes =
+        typeof rm.minutes === 'number'
+          ? rm.minutes
+          : typeof rm.duration_minutes === 'number'
+          ? rm.duration_minutes
+          : 30 // 기본값 30분
+
+      byDate[date] = (byDate[date] || 0) + minutes
+    })
+
+    const activitySeries = Object.entries(byDate)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, minutes]) => ({ date, minutes }))
+
+    // ---- 평균 점수 (related_metrics.score 기준) ----
+    let sumScore = 0
+    let scoreCount = 0
+    logs.forEach(l => {
+      const rm = l.related_metrics || {}
+      const s =
+        typeof rm.score === 'number'
+          ? rm.score
+          : typeof rm.level_score === 'number'
+          ? rm.level_score
+          : null
+      if (typeof s === 'number') {
+        sumScore += s
+        scoreCount++
+      }
+    })
+
+    const averageScore =
+      scoreCount > 0 ? Math.round(sumScore / scoreCount) : 0
+
+    const metrics = {
+      recordCount,
+      positivePercent,
+      averageScore,
+    }
+
+    // 활동별 능력 리스트 (지금은 아직 정의 안 되어 있으므로 빈 배열)
+    const activityAbilityList = []
+
+    return res.json({
+      metrics,
+      emotionDistribution,
+      activitySeries,
+      activityAbilityList,
+    })
+  } catch (e) {
+    console.error('GET /api/dashboard 에러:', e)
+    return res
+      .status(500)
+      .json({ message: 'Dashboard Error', error: e.toString() })
+  }
+})
+
+// -------------------- 리포트 실행 이력 API (/api/report-runs) --------------------
+// (Report.jsx 에서 사용)
+
+app.get('/api/report-runs', async (req, res) => {
+  const { limit = 50, offset = 0 } = req.query
+
+  try {
+    const { data, error, count } = await supabase
+      .from('report_runs')
+      .select('*', { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .range(Number(offset), Number(offset) + Number(limit) - 1)
+
+    if (error) {
+      console.error('report_runs 목록 조회 에러:', error)
+      return res.status(500).json({ message: 'DB Error', error })
+    }
+
+    res.json({
+      count,
+      items: data || [],
+    })
+  } catch (e) {
+    console.error('GET /api/report-runs 에러:', e)
+    res
+      .status(500)
+      .json({ message: 'Report runs Error', error: e.toString() })
+  }
+})
+
+app.get('/api/report-runs/:id', async (req, res) => {
+  const { id } = req.params
+
+  try {
+    const { data, error } = await supabase
+      .from('report_runs')
+      .select('*')
+      .eq('id', id)
+      .single()
+
+    if (error || !data) {
+      console.error('report_runs 상세 조회 에러:', error)
+      return res.status(404).json({ message: '리포트를 찾을 수 없습니다.', error })
+    }
+
+    res.json(data)
+  } catch (e) {
+    console.error('GET /api/report-runs/:id 에러:', e)
+    res
+      .status(500)
+      .json({ message: 'Report runs Error', error: e.toString() })
+  }
+})
+
+app.post('/api/report-runs', async (req, res) => {
+  const { title, description, filters } = req.body || {}
+
+  if (!title) {
+    return res.status(400).json({ message: 'title 은 필수입니다.' })
+  }
+
+  try {
+    const now = new Date().toISOString()
+    const payload = {
+      title,
+      description: description || null,
+      filters: filters || {},
+      status: 'queued',
+      created_at: now,
+      updated_at: now,
+    }
+
+    const { data, error } = await supabase
+      .from('report_runs')
+      .insert([payload])
+      .select()
+      .single()
+
+    if (error) {
+      console.error('report_runs insert 에러:', error)
+      return res.status(500).json({ message: 'DB Error', error })
+    }
+
+    res.status(201).json(data)
+  } catch (e) {
+    console.error('POST /api/report-runs 에러:', e)
+    res
+      .status(500)
+      .json({ message: 'Report create Error', error: e.toString() })
+  }
+})
+
+app.get('/api/report-runs/:id/download', async (req, res) => {
+  const { id } = req.params
+
+  try {
+    const { data, error } = await supabase
+      .from('report_runs')
+      .select('*')
+      .eq('id', id)
+      .single()
+
+    if (error || !data) {
+      console.error('report_runs 다운로드 조회 에러:', error)
+      return res.status(404).json({ message: '리포트를 찾을 수 없습니다.', error })
+    }
+
+    const csvContent = [
+      'title,created_at,status',
+      `"${data.title}",${data.created_at},${data.status}`,
+    ].join('\n')
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="report-${id}.csv"`,
+    )
+    res.send(csvContent)
+  } catch (e) {
+    console.error('GET /report-runs/:id/download 에러:', e)
+    res
+      .status(500)
+      .json({ message: 'Report download error', error: e.toString() })
+  }
+})
+
+// -------------------- 서버 시작 --------------------
+
+app.listen(port, () => {
+  console.log(`서버 실행중: http://localhost:${port}`)
+})
