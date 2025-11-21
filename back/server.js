@@ -622,59 +622,86 @@ app.get('/students/:id/activities', async (req, res) => {
   }
 })
 
+// 학생 추가: 최소한 name만 넣어서 Supabase 컬럼 불일치 오류를 피함
 app.post('/api/students', async (req, res) => {
-  const { name, status = '재학중', admission_date, birth_date, notes } = req.body
+  try {
+    const { name } = req.body || {}
 
-  if (!name) {
-    return res.status(400).json({ message: 'name은 필수입니다.' })
+    if (!name || typeof name !== 'string' || !name.trim()) {
+      return res.status(400).json({ message: 'name은 필수입니다.' })
+    }
+
+    const payload = {
+      name: name.trim(),
+      // 나중에 테이블에 nickname, real_name 같은 컬럼을 만들면
+      // 여기서 같이 넣어주면 됨.
+    }
+
+    console.log('POST /api/students payload:', payload)
+
+    const { data, error } = await supabase
+      .from('students')
+      .insert([payload])
+      .select()
+      .single()
+
+    if (error) {
+      console.error('students 추가 에러:', error)
+      // supabase Error 객체를 그대로 넘기면 JSON.stringify 에서 또 에러날 수 있어서 문자열만 보냄
+      return res.status(500).json({
+        message: 'DB Error',
+        detail: error.message || error.toString(),
+      })
+    }
+
+    return res.status(201).json(data)
+  } catch (e) {
+    console.error('POST /api/students 예외:', e)
+    return res
+      .status(500)
+      .json({ message: 'Server Error', detail: e.toString() })
   }
-
-  const { data, error } = await supabase
-    .from('students')
-    .insert([
-      {
-        name,
-        status,
-        admission_date,
-        birth_date,
-        notes,
-      },
-    ])
-    .select()
-    .single()
-
-  if (error) {
-    console.error('students 추가 에러:', error)
-    return res.status(500).json({ message: 'DB Error', error })
-  }
-
-  res.status(201).json(data)
 })
 
 app.patch('/api/students/:id', async (req, res) => {
   const { id } = req.params
-  const { name, status, admission_date, birth_date, notes } = req.body
 
-  const updateData = {}
-  if (name !== undefined) updateData.name = name
-  if (status !== undefined) updateData.status = status
-  if (admission_date !== undefined) updateData.admission_date = admission_date
-  if (birth_date !== undefined) updateData.birth_date = birth_date
-  if (notes !== undefined) updateData.notes = notes
+  try {
+    const { name, status, admission_date, birth_date, notes } = req.body || {}
 
-  const { data, error } = await supabase
-    .from('students')
-    .update(updateData)
-    .eq('id', id)
-    .select()
-    .single()
+    const updateData = {}
+    if (name !== undefined) updateData.name = name
+    if (status !== undefined) updateData.status = status
+    if (admission_date !== undefined) updateData.admission_date = admission_date
+    if (birth_date !== undefined) updateData.birth_date = birth_date
+    if (notes !== undefined) updateData.notes = notes
 
-  if (error) {
-    console.error('students 수정 에러:', error)
-    return res.status(500).json({ message: 'DB Error', error })
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({ message: '업데이트할 필드가 없습니다.' })
+    }
+
+    const { data, error } = await supabase
+      .from('students')
+      .update(updateData)
+      .eq('id', id)
+      .select()
+      .single()
+
+    if (error) {
+      console.error('students 수정 에러:', error)
+      return res.status(500).json({
+        message: 'DB Error',
+        detail: error.message || error.toString(),
+      })
+    }
+
+    return res.json(data)
+  } catch (e) {
+    console.error('PATCH /api/students/:id 예외:', e)
+    return res
+      .status(500)
+      .json({ message: 'Server Error', detail: e.toString() })
   }
-
-  res.json(data)
 })
 
 app.delete('/api/students/:id', async (req, res) => {
@@ -1433,6 +1460,348 @@ ${historyText || '(이전 대화 없음)'}
   }
 })
 
+// -------------------- 리포트 API (/report-runs, /api/report-runs) --------------------
+
+/**
+ * GET /report-runs, /api/report-runs
+ * - 리포트 실행 이력 목록 조회
+ * - 쿼리: from, to, on, category, student_id, purpose, limit, offset
+ * - 응답: { runs: [...], count: number }
+ */
+app.get(['/report-runs', '/api/report-runs'], async (req, res) => {
+  try {
+    const {
+      from,
+      to,
+      on,
+      category,
+      student_id,
+      purpose,
+      limit = 50,
+      offset = 0,
+    } = req.query
+
+    // 기본 쿼리: report_templates, report_outputs 조인
+    let query = supabase
+      .from('report_runs')
+      .select(
+        `
+        id,
+        template_id,
+        params,
+        status,
+        error,
+        created_at,
+        updated_at,
+        template:report_templates (
+          id,
+          code,
+          name,
+          format,
+          config
+        ),
+        outputs:report_outputs (
+          id,
+          kind,
+          storage_key,
+          created_at
+        )
+      `,
+        { count: 'exact' },
+      )
+      .order('created_at', { ascending: false })
+      .range(Number(offset), Number(offset) + Number(limit) - 1)
+
+    // 1) 날짜 필터: created_at 기준
+    if (from) {
+      query = query.gte('created_at', from)
+    }
+    if (to) {
+      // 종료일 포함되도록 to+1일 00:00 전까지
+      const d = new Date(to)
+      if (!Number.isNaN(d.getTime())) {
+        d.setDate(d.getDate() + 1)
+        query = query.lt('created_at', d.toISOString())
+      }
+    }
+    if (on) {
+      const start = new Date(on)
+      if (!Number.isNaN(start.getTime())) {
+        const end = new Date(start)
+        end.setDate(end.getDate() + 1)
+        query = query
+          .gte('created_at', start.toISOString())
+          .lt('created_at', end.toISOString())
+      }
+    }
+
+    // 2) params(jsonb) 기반 필터 (category, student_id, purpose)
+    const paramsFilter = {}
+    if (category && category !== 'all') paramsFilter.category = category
+    if (student_id && student_id !== 'all') paramsFilter.student_id = student_id
+    if (purpose && purpose !== 'all') paramsFilter.purpose = purpose
+
+    if (Object.keys(paramsFilter).length > 0) {
+      query = query.contains('params', paramsFilter)
+    }
+
+    const { data, error, count } = await query
+
+    if (error) {
+      console.error('report_runs 목록 조회 에러:', error)
+      return res
+        .status(500)
+        .json({ message: 'DB Error', detail: error.message || String(error) })
+    }
+
+    return res.json({
+      runs: data || [],
+      count: count ?? (data ? data.length : 0),
+    })
+  } catch (e) {
+    console.error('GET /report-runs 예외:', e)
+    return res
+      .status(500)
+      .json({ message: 'Server Error', detail: e.toString() })
+  }
+})
+
+/**
+ * POST /report-runs, /api/report-runs
+ * - 새 리포트 실행 이력 생성
+ * - body 예시:
+ *   {
+ *     "template_code": "parent_summary",  // 또는 template_id 직접 전달
+ *     "params": {
+ *       "from": "2025-11-01",
+ *       "to": "2025-11-30",
+ *       "category": "emotion",
+ *       "student_id": "학생UUID",
+ *       "purpose": "parent"
+ *     },
+ *     "requested_by": "요청자 user uuid (옵션)"
+ *   }
+ */
+app.post(['/report-runs', '/api/report-runs'], async (req, res) => {
+  try {
+    const { template_code, template_id, params, requested_by } = req.body || {}
+
+    let tplId = template_id || null
+
+    // 1) template_id가 없으면 template_code로 report_templates 조회
+    if (!tplId) {
+      if (!template_code) {
+        return res
+          .status(400)
+          .json({ message: 'template_code 또는 template_id가 필요합니다.' })
+      }
+
+      const { data: tpl, error: tplErr } = await supabase
+        .from('report_templates')
+        .select('id, code, name, format, config')
+        .eq('code', template_code)
+        .single()
+
+      if (tplErr || !tpl) {
+        console.error('report_templates 조회 에러:', tplErr)
+        return res.status(400).json({
+          message:
+            '해당 코드의 리포트 템플릿을 찾을 수 없습니다. (report_templates.code 확인 필요)',
+        })
+      }
+
+      tplId = tpl.id
+    }
+
+    const payload = {
+      template_id: tplId,
+      params: params || {},
+      requested_by: requested_by || null, // 지금은 별도 인증 안 쓰므로 옵션
+      // status, created_at, updated_at 은 DB default 사용 (queued)
+    }
+
+    const { data, error } = await supabase
+      .from('report_runs')
+      .insert([payload])
+      .select(
+        `
+        id,
+        template_id,
+        params,
+        status,
+        error,
+        created_at,
+        updated_at,
+        template:report_templates (
+          id,
+          code,
+          name,
+          format,
+          config
+        ),
+        outputs:report_outputs (
+          id,
+          kind,
+          storage_key,
+          created_at
+        )
+      `,
+      )
+      .single()
+
+    if (error) {
+      console.error('report_runs insert 에러:', error)
+      return res
+        .status(500)
+        .json({ message: 'DB Error', detail: error.message || String(error) })
+    }
+
+    return res.status(201).json(data)
+  } catch (e) {
+    console.error('POST /report-runs 예외:', e)
+    return res
+      .status(500)
+      .json({ message: 'Server Error', detail: e.toString() })
+  }
+})
+
+/**
+ * GET /report-runs/:id, /api/report-runs/:id
+ * - 단일 리포트 실행 이력 조회 (상세 보기용)
+ */
+app.get(['/report-runs/:id', '/api/report-runs/:id'], async (req, res) => {
+  const { id } = req.params
+
+  try {
+    const { data, error } = await supabase
+      .from('report_runs')
+      .select(
+        `
+        id,
+        template_id,
+        params,
+        status,
+        error,
+        created_at,
+        updated_at,
+        template:report_templates (
+          id,
+          code,
+          name,
+          format,
+          config
+        ),
+        outputs:report_outputs (
+          id,
+          kind,
+          storage_key,
+          created_at
+        )
+      `,
+      )
+      .eq('id', id)
+      .single()
+
+    if (error || !data) {
+      console.error('report_runs 단일 조회 에러:', error)
+      return res.status(404).json({ message: '리포트를 찾을 수 없습니다.' })
+    }
+
+    return res.json(data)
+  } catch (e) {
+    console.error('GET /report-runs/:id 예외:', e)
+    return res
+      .status(500)
+      .json({ message: 'Server Error', detail: e.toString() })
+  }
+})
+
+/**
+ * DELETE /report-runs/:id, /api/report-runs/:id
+ * - 리포트 및 연결된 출력(report_outputs) 함께 삭제
+ */
+app.delete(
+  ['/report-runs/:id', '/api/report-runs/:id'],
+  async (req, res) => {
+    const { id } = req.params
+
+    try {
+      // 1) 출력물 먼저 삭제 (FK 제약 때문에)
+      const { error: outErr } = await supabase
+        .from('report_outputs')
+        .delete()
+        .eq('run_id', id)
+
+      if (outErr) {
+        console.error('report_outputs 삭제 에러:', outErr)
+        // 치명적이면 return 해도 되지만, 일단 로그만 남기고 진행
+      }
+
+      // 2) run 삭제
+      const { error } = await supabase
+        .from('report_runs')
+        .delete()
+        .eq('id', id)
+
+      if (error) {
+        console.error('report_runs 삭제 에러:', error)
+        return res
+          .status(500)
+          .json({ message: 'DB Error', detail: error.message || String(error) })
+      }
+
+      return res.status(204).send()
+    } catch (e) {
+      console.error('DELETE /report-runs/:id 예외:', e)
+      return res
+        .status(500)
+        .json({ message: 'Server Error', detail: e.toString() })
+    }
+  },
+)
+
+/**
+ * GET /report-runs/:id/download, /api/report-runs/:id/download
+ * - 프론트에서 사용하는 "다운로드" 엔드포인트용 기본 틀
+ * - 아직 Supabase Storage 연동은 안 했고, 파일이 없으면 404 응답.
+ */
+app.get(
+  ['/report-runs/:id/download', '/api/report-runs/:id/download'],
+  async (req, res) => {
+    const { id } = req.params
+    const format = req.query.format || 'pdf'
+
+    try {
+      const { data, error } = await supabase
+        .from('report_outputs')
+        .select('id, kind, storage_key, created_at')
+        .eq('run_id', id)
+        .eq('kind', format)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single()
+
+      if (error || !data) {
+        console.error('report_outputs 조회 에러:', error)
+        return res
+          .status(404)
+          .send('출력 파일을 찾을 수 없습니다. (report_outputs 확인 필요)')
+      }
+
+      // TODO: Supabase Storage에서 실제 파일을 읽어서 스트리밍하거나,
+      //       public URL로 redirect 하는 로직을 여기에 추가하면 됨.
+      // 지금은 엔드포인트만 살아있도록 501 응답.
+      return res
+        .status(501)
+        .send('파일 다운로드는 아직 구현되지 않았습니다.')
+    } catch (e) {
+      console.error('GET /report-runs/:id/download 예외:', e)
+      return res
+        .status(500)
+        .send('다운로드 처리 중 서버 오류가 발생했습니다.')
+    }
+  },
+)
 
 // -------------------- 서버 시작 --------------------
 

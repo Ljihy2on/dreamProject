@@ -119,12 +119,14 @@ export default function StudentList() {
     setError('')
 
     try {
+      // 🔴 백엔드 /api/students 는 name, status 를 기대함
       const body = {
-        // 백엔드 /api/students 는 name, status, notes 를 사용하므로
-        // 본명 -> name, 별명 -> notes 에 저장한다.
+        // Supabase students.name 컬럼에 "본명"을 넣는다고 가정
         name: newRealName.trim(),
         status: '재학중',
-        notes: newNickname.trim(),
+        // 만약 students 테이블에 notes 컬럼이 실제로 있다면,
+        // 별명을 notes에 함께 저장하고 싶으면 아래 주석을 풀어도 됨
+        // notes: newNickname.trim(),
       }
 
       const res = await apiFetch('/api/students', {
@@ -132,18 +134,19 @@ export default function StudentList() {
         body: JSON.stringify(body),
       })
 
-      const createdRaw =
-        res?.data && res.data.id
-          ? res.data
-          : res // 공통 래퍼/직접 응답 둘 다 대응
+      // 서버는 students row 그대로를 응답함
+      const createdRaw = res?.data && res.data.id ? res.data : res
 
+      // 🔵 화면에 보여줄 때는 nickname / realName 형태로 가공
       const created = {
         id: createdRaw.id,
+        // 별명은 우선순위: nickname > nick_name > notes > (없으면 본명)
         nickname:
           createdRaw.nickname ??
           createdRaw.nick_name ??
           createdRaw.notes ??
           newNickname.trim(),
+        // 본명은: real_name > full_name > name > (없으면 입력값)
         realName:
           createdRaw.realName ??
           createdRaw.real_name ??
@@ -162,7 +165,6 @@ export default function StudentList() {
       setCreating(false)
     }
   }
-
 
   // ───────────────── 수정 모달 ─────────────────
   function openEditModal(student) {
@@ -192,21 +194,22 @@ export default function StudentList() {
     setError('')
 
     try {
+      // 백엔드 스펙에 맞게 name/notes 기준으로 보냄
       const body = {
-        // 서버에서는 name/notes 만 업데이트하면 되도록 맞춘다.
-        name: editRealName.trim(),
-        notes: editNickname.trim(),
+        name: editRealName.trim(),       // 본명
+        // status를 바꾸고 싶으면 여기서 같이 보낼 수 있음
+        // status: '재학중',
+        // notes 컬럼이 있다면 별명을 notes에 저장
+        // notes: editNickname.trim(),
       }
 
       const res = await apiFetch(`/api/students/${editingStudent.id}`, {
-        method: 'PATCH',              // 서버는 PATCH 사용 중
+        method: 'PATCH',                     // 🔴 PUT → PATCH 로 변경
         body: JSON.stringify(body),
       })
 
       const updatedRaw =
-        res?.data && res.data.id
-          ? res.data
-          : { id: editingStudent.id, ...body }
+        res?.data && res.data.id ? res.data : { id: editingStudent.id, ...body }
 
       const updated = {
         id: updatedRaw.id,
