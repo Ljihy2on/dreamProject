@@ -257,6 +257,33 @@ app.get(['/uploads/:id', '/api/uploads/:id'], async (req, res) => {
   }
 })
 
+/**
+ * DELETE /uploads/:id, /api/uploads/:id
+ * - ingest_uploads 행 삭제
+ */
+app.delete(['/uploads/:id', '/api/uploads/:id'], async (req, res) => {
+  const { id } = req.params
+
+  try {
+    const { error } = await supabase
+      .from('ingest_uploads')
+      .delete()
+      .eq('id', id)
+
+    if (error) {
+      console.error('ingest_uploads 삭제 에러:', error)
+      return res.status(500).json({ message: 'DB Error', error })
+    }
+
+    return res.status(204).send()
+  } catch (e) {
+    console.error('DELETE /uploads/:id 에러:', e)
+    return res
+      .status(500)
+      .json({ message: 'Server Error', error: e.toString() })
+  }
+})
+
 // -------------------- 업로드 로그 저장 (/uploads/:id/log) --------------------
 /**
  * POST /uploads/:id/log, /api/uploads/:id/log

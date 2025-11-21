@@ -527,7 +527,9 @@ export default function UploadPage() {
   // 감정 키워드 세트 로드 (emotion_keywords)
   async function loadEmotionKeywords() {
     try {
-      const data = await apiFetch('/rest/v1/emotion_keywords?select=*')
+      // ✅ 기존: /rest/v1/emotion_keywords?select=*
+      const data = await apiFetch('/rest/v1/tags?select=*')
+
       const rows = Array.isArray(data)
         ? data
         : Array.isArray(data?.items)
@@ -553,6 +555,7 @@ export default function UploadPage() {
       }
     } catch (e) {
       console.error(e)
+      // 에러 시에는 기본 키워드 세트 사용
       setEmotionKeywords(
         DEFAULT_EMOTION_KEYWORDS.map((label, index) => ({
           id: `local-${index}`,
@@ -951,12 +954,14 @@ export default function UploadPage() {
 
     const exists = emotionKeywords.find(item => item.label === trimmed)
     if (exists) {
+      // 이미 존재하면 단순 토글만
       toggleEmotionTagInDetail(trimmed)
       return
     }
 
     try {
-      const response = await apiFetch('/rest/v1/emotion_keywords', {
+      // ✅ 기존: /rest/v1/emotion_keywords
+      const response = await apiFetch('/rest/v1/tags', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -975,11 +980,13 @@ export default function UploadPage() {
       toggleEmotionTagInDetail(newItem.label)
     } catch (e) {
       console.error(e)
+      // 백엔드 저장 실패해도 프론트 로컬에는 추가해서 사용 가능하게
       const fallbackItem = { id: trimmed, label: trimmed }
       setEmotionKeywords(prev => [...prev, fallbackItem])
       toggleEmotionTagInDetail(trimmed)
     }
   }
+
 
   function toggleActivityTypeSelection(key) {
     updateActiveStudent(current => {

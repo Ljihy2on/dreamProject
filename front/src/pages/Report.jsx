@@ -3,6 +3,40 @@ import React, { useEffect, useState, useMemo } from 'react'
 import Layout from '../components/Layout.jsx'
 import { apiFetch, generateReportWithGemini } from '../lib/api.js'
 
+// 🔹 리포트 카테고리 메타 정보 (Gemini에 함께 전달)
+const REPORT_CATEGORY_CONFIG = {
+  all: {
+    code: 'all',
+    label: '전체',
+    description:
+      '기간 동안의 전반적인 활동, 감정, 능력 변화를 종합적으로 요약합니다.',
+  },
+  full: {
+    code: 'full',
+    label: '전체 리포트',
+    description:
+      '감정, 활동, 능력 변화를 모두 포함하는 전체 종합 리포트를 생성합니다.',
+  },
+  emotion: {
+    code: 'emotion',
+    label: '감정 변화',
+    description:
+      '기간 동안의 감정 분포와 변화 양상을 중심으로 리포트를 생성합니다.',
+  },
+  activity_ratio: {
+    code: 'activity_ratio',
+    label: '활동 비율 변화',
+    description:
+      '어떤 활동을 얼마나 했는지, 활동 유형의 비율 변화를 중심으로 리포트를 생성합니다.',
+  },
+  ability_growth: {
+    code: 'ability_growth',
+    label: '능력 성장 곡선',
+    description:
+      '활동 기록에 나타난 학생의 능력 변화와 성장 포인트를 중심으로 리포트를 생성합니다.',
+  },
+}
+
 // 프론트 단에서 env 그대로 다시 읽어옴 (api.js 안과 동일한 규칙)
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 const USE_MOCK = String(import.meta.env.VITE_USE_MOCK || '0') === '1'
@@ -34,10 +68,7 @@ export default function Report() {
 
   // 🔹 시작일 > 종료일인 경우 검증
   const isInvalidRange =
-    filterMode === 'range' &&
-    startDate &&
-    endDate &&
-    startDate > endDate
+    filterMode === 'range' && startDate && endDate && startDate > endDate
 
   // 데모용 더미 데이터 (백엔드가 아직 없어도 UI 확인 가능)
   const demoReports = [
@@ -208,8 +239,7 @@ export default function Report() {
           run.expires_at ??
           (createdAt
             ? new Date(
-                new Date(createdAt).getTime() +
-                  7 * 24 * 60 * 60 * 1000,
+                new Date(createdAt).getTime() + 7 * 24 * 60 * 60 * 1000,
               ).toISOString()
             : null)
 
@@ -219,8 +249,7 @@ export default function Report() {
           id: run.id,
           templateCode: template.code ?? run.template_code,
           templateName: template.name ?? run.template_name ?? '리포트',
-          studentName:
-            params.student_name ?? params.student_label ?? '학생',
+          studentName: params.student_name ?? params.student_label ?? '학생',
           periodLabel:
             from && to
               ? `분석 기간: ${from} ~ ${to}`
@@ -235,10 +264,9 @@ export default function Report() {
           status: run.status,
           createdAt,
           expiresAt,
-          outputs: [
-            hasPdf ? 'pdf' : null,
-            hasXlsx ? 'xlsx' : null,
-          ].filter(Boolean),
+          outputs: [hasPdf ? 'pdf' : null, hasXlsx ? 'xlsx' : null].filter(
+            Boolean,
+          ),
           // 백엔드에서 직접 download_url 을 내려주면 그것을 사용
           downloadPath:
             firstPdf?.download_url ||
@@ -252,9 +280,7 @@ export default function Report() {
       setReports(normalized.length ? normalized : demoReports)
     } catch (err) {
       console.error(err)
-      setError(
-        '리포트 목록을 불러오지 못했습니다. (예시 데이터를 표시합니다)',
-      )
+      setError('리포트 목록을 불러오지 못했습니다. (예시 데이터를 표시합니다)')
       setReports(demoReports)
     } finally {
       setLoading(false)
@@ -292,9 +318,7 @@ export default function Report() {
     e.preventDefault()
 
     if (filterMode === 'range' && isInvalidRange) {
-      alert(
-        '시작일이 종료일보다 늦을 수 없습니다. 기간을 다시 선택해주세요.',
-      )
+      alert('시작일이 종료일보다 늦을 수 없습니다. 기간을 다시 선택해주세요.')
       return
     }
 
@@ -378,13 +402,10 @@ export default function Report() {
 
       // 실제 백엔드 연동 시
       const token = localStorage.getItem('token') || ''
-      const headers = token
-        ? { Authorization: `Bearer ${token}` }
-        : {}
+      const headers = token ? { Authorization: `Bearer ${token}` } : {}
 
       const path =
-        report.downloadPath ||
-        `/report-runs/${report.id}/download?format=pdf`
+        report.downloadPath || `/report-runs/${report.id}/download?format=pdf`
 
       const res = await fetch(
         path.startsWith('http') ? path : API_BASE + path,
@@ -414,19 +435,15 @@ export default function Report() {
   }
 
   // ---------- Gemini AI 리포트 생성 & 즉시 다운로드(.md) ----------
+  // 🔸 여기서 날짜 / 학생정보 / 카테고리를 모두 고려해서 payload 구성
 
   async function handleGenerateAiReport() {
     if (filterMode === 'range' && isInvalidRange) {
-      alert(
-        '시작일이 종료일보다 늦을 수 없습니다. 기간을 다시 선택해주세요.',
-      )
+      alert('시작일이 종료일보다 늦을 수 없습니다. 기간을 다시 선택해주세요.')
       return
     }
 
-    const from =
-      filterMode === 'range'
-        ? startDate || null
-        : singleDate || null
+    const from = filterMode === 'range' ? startDate || null : singleDate || null
     const to =
       filterMode === 'range'
         ? endDate || startDate || null
@@ -442,6 +459,10 @@ export default function Report() {
       return
     }
 
+    // 선택된 카테고리 메타 정보
+    const categoryConfig =
+      REPORT_CATEGORY_CONFIG[category] || REPORT_CATEGORY_CONFIG.all
+
     try {
       setGenerating(true)
       setGenerateError(null)
@@ -454,7 +475,7 @@ export default function Report() {
         console.warn('학생 정보를 불러오지 못했습니다.', e)
       }
 
-      // 2) 대시보드 요약
+      // 2) 대시보드 요약 (선택한 날짜/학생 기준)
       let summaryStats = {}
       try {
         const dash = await apiFetch(
@@ -472,7 +493,7 @@ export default function Report() {
         console.warn('대시보드 데이터를 불러오지 못했습니다.', e)
       }
 
-      // 3) 활동 샘플
+      // 3) 활동 샘플 (선택한 날짜/학생 기준)
       let activitySamples = []
       try {
         const logs = await apiFetch(
@@ -501,13 +522,23 @@ export default function Report() {
           : '분석적이고 요약 중심의 톤'
 
       const payload = {
+        // 🔸 학생 정보
         student_profile: studentProfile,
+        // 🔸 날짜 범위
         date_range: { start_date: from, end_date: to },
+        // 🔸 집계 데이터
         summary_stats: summaryStats,
+        // 🔸 활동 샘플
         activity_samples: activitySamples,
+        // 🔸 프롬프트 옵션 (카테고리 / 목적 / 톤 / 선택한 학생 ID 포함)
         report_options: {
-          purpose,
-          tone,
+          purpose, // 'parent' | 'school' | 'all'
+          tone, // 자연어 설명
+          category_code: categoryConfig.code,
+          category_label: categoryConfig.label,
+          category_description: categoryConfig.description,
+          student_id: studentId,
+          filter_mode: filterMode,
         },
       }
 
@@ -553,8 +584,8 @@ export default function Report() {
           {/* 상단 설명 */}
           <header className="report-header">
             <p className="muted">
-              날짜와 카테고리를 선택하여 리포트를 필터링하고 다운로드할
-              수 있습니다.
+              날짜, 학생, 카테고리를 선택하면 해당 조건에 맞는 리포트를 조회하거나
+              Gemini로 AI 리포트를 생성할 수 있습니다.
             </p>
           </header>
 
@@ -663,6 +694,7 @@ export default function Report() {
                     className="report-select"
                   >
                     <option value="all">전체</option>
+                    {/* TODO: 나중에 /api/students 연동해서 실제 학생 목록으로 교체 가능 */}
                     <option value="jiwon-u">지원(우지원)</option>
                     <option value="jiwon-a">지원(안지원)</option>
                   </select>
@@ -702,9 +734,7 @@ export default function Report() {
                     onClick={handleGenerateAiReport}
                     disabled={generating}
                   >
-                    {generating
-                      ? 'AI 리포트 생성 중...'
-                      : 'AI 리포트 생성(.md)'}
+                    {generating ? 'AI 리포트 생성 중...' : 'AI 리포트 생성(.md)'}
                   </button>
                   <button type="submit" className="btn">
                     적용하기
@@ -721,16 +751,12 @@ export default function Report() {
                     marginTop: 4,
                   }}
                 >
-                  시작일이 종료일보다 늦을 수 없습니다. 날짜를 다시
-                  선택해 주세요.
+                  시작일이 종료일보다 늦을 수 없습니다. 날짜를 다시 선택해 주세요.
                 </div>
               )}
 
               {generateError && (
-                <div
-                  className="error"
-                  style={{ marginTop: 4 }}
-                >
+                <div className="error" style={{ marginTop: 4 }}>
                   {generateError}
                 </div>
               )}
@@ -755,10 +781,7 @@ export default function Report() {
                     const canDownload = report.outputs.includes('pdf')
 
                     return (
-                      <article
-                        key={report.id}
-                        className="report-card"
-                      >
+                      <article key={report.id} className="report-card">
                         {/* 카드 상단: 아이콘 + 제목/메타 + 상태 뱃지 */}
                         <div className="report-card-header">
                           <div className="report-card-icon-wrap">
@@ -782,9 +805,7 @@ export default function Report() {
 
                           <div className="report-card-status">
                             <span
-                              className={getStatusBadgeClass(
-                                report.status,
-                              )}
+                              className={getStatusBadgeClass(report.status)}
                             >
                               {getStatusLabel(report.status)}
                             </span>
@@ -823,9 +844,7 @@ export default function Report() {
                             <button
                               type="button"
                               className="btn report-btn"
-                              onClick={() =>
-                                handleViewDetail(report)
-                              }
+                              onClick={() => handleViewDetail(report)}
                             >
                               상세보기
                             </button>
@@ -833,9 +852,7 @@ export default function Report() {
                               type="button"
                               className="btn secondary report-btn"
                               disabled={!canDownload}
-                              onClick={() =>
-                                handleDownload(report)
-                              }
+                              onClick={() => handleDownload(report)}
                             >
                               다운로드
                             </button>

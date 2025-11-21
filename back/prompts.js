@@ -1,99 +1,155 @@
+// back/prompts.js
+
 /**
- * 1. PDF/TXT 텍스트 구조화 프롬프트
- * - 원본 텍스트를 분석하여 DB에 저장할 수 있는 JSON 배열로 변환
+ * 1. 텍스트 구조화 프롬프트 (기존과 동일)
  */
 const PDF_TXT_EXTRACTION_PROMPT = `
-당신은 특수교육/통합교육 학생 활동 기록을 전문적으로 분석하고 구조화하는 데이터 처리 엔진입니다. 당신의 임무는 입력된 원본 텍스트(raw text)를 엄격히 정의된 JSON 스키마를 따르는 활동 기록 레코드 배열로 변환하는 것입니다.
+당신은 특수교육/통합교육 학생 활동 기록을 전문적으로 분석하고 구조화하는 데이터 처리 엔진입니다. 
+입력된 원본 텍스트(raw text)를 분석하여 아래 JSON 스키마에 맞는 활동 기록 레코드 배열로 변환해 주세요.
 
-**[처리 원칙 및 지침]**
-1. **출력 형식**: 오직 유효한 **JSON 배열**만 반환해야 합니다. 추가 설명이나 마크다운은 절대 포함하지 마십시오.
-2. **데이터 분리**: 하나의 원본 텍스트에 여러 학생, 여러 날짜의 활동이 섞여 있을 수 있습니다. 학생 이름 및 날짜를 기준으로 최대한 **개별적인 활동 레코드**로 분리하여 \`records\` 배열에 담아야 합니다.
-3. **보수적 추론**: 텍스트에 명확하게 언급되지 않은 정보는 절대 추론하거나 지어내지 마십시오. 학생 ID, 날짜, 시간 정보가 불명확하면 반드시 **\`null\`**로 처리해야 합니다.
-4. **필드 제약 조건**:
-    * \`activity_type\`: 활동 내용을 기반으로 다음 중 하나 선택: **'자유놀이', '미술활동', '등교/하교', '급식/간식', '체육활동', '개별지도', '그룹수업', '전이/휴식', '기타'**.
-    * \`ability_analysis.level\`: 학생의 수행 수준은 다음 중 하나: **'매우 우수', '우수', '보통', '도전적'**.
-    * \`emotions.intensity\`: 1(약함) ~ 5(매우 강함).
+**[지침]**
+1. 출력은 오직 **유효한 JSON**이어야 합니다. (Markdown 코드 블록 없이 순수 JSON만 반환)
+2. **데이터 분리**: 텍스트에 여러 날짜나 활동이 섞여 있다면, 의미 단위로 나누어 \`records\` 배열에 담으세요.
+3. **보수적 추론**: 날짜나 학생 이름이 명확하지 않으면 \`null\`로 두세요. 없는 내용을 지어내지 마세요.
+4. **필드 값 규칙**:
+   - \`activity_type\`: [자유놀이, 미술활동, 등교/하교, 급식/간식, 체육활동, 개별지도, 그룹수업, 전이/휴식, 기타] 중 택 1
+   - \`level\`: [매우 우수, 우수, 보통, 도전적] 중 택 1 (ability_analysis 내부)
+   - \`intensity\`: 1~5 (emotions 내부)
 
-**[입력 데이터 형식]**
-\`\`\`json
-{
-  "raw_text": "{raw_text}",
-  "file_name": "{file_name}"
-}
-\`\`\`
+**[입력 텍스트]**
+{raw_text}
 
 **[출력 JSON 스키마]**
-\`\`\`json
 {
   "records": [
     {
-      "student_name": "string",
+      "student_name": "string | null",
       "date": "YYYY-MM-DD | null",
       "activity_title": "string",
       "activity_type": "string",
       "time_range": "string | null",
-      "raw_activity_text": "string",
+      "raw_activity_text": "string (해당 활동 관련 원본 문장)",
       "ability_analysis": {
-        "main_abilities": ["string"],
-        "level": "매우 우수|우수|보통|도전적",
-        "comment": "string"
+        "main_abilities": ["string", "string"],
+        "level": "string",
+        "comment": "string (능력 관련 짧은 평가)"
       },
       "emotions": [
-        {
-          "label": "string",
-          "intensity": 1-5,
-          "reason": "string | null"
-        }
+        { "label": "string", "intensity": 1-5, "reason": "string" }
       ],
       "behavior_tags": ["string"],
-      "teacher_comment": "string"
+      "teacher_comment": "string (교사용 요약)"
     }
   ]
 }
-\`\`\`
 `;
 
 /**
- * 2. 리포트 생성 프롬프트
- * - 구조화된 데이터와 통계를 바탕으로 PDF용 마크다운 리포트 생성
+ * 2. 리포트 프롬프트 생성기 (4가지 카테고리 대응)
  */
-const REPORT_GENERATION_PROMPT = `
-당신은 특수교육/통합교육 전문가를 위한 학생 활동 보고서(Report) 작성 전문가입니다. 당신의 임무는 입력된 JSON 데이터를 바탕으로 특정 기간 동안의 학생 활동을 분석하고, 지정된 목적과 톤에 맞는 **한국어 리포트 본문**을 **Markdown 형식**으로 생성하는 것입니다.
+const GET_REPORT_PROMPT = (category, purpose, tone) => {
+  // 공통 기본 지침
+  const baseInstruction = `
+당신은 특수교육 전문가입니다. 입력된 통계 데이터와 활동 샘플을 바탕으로 **Markdown 형식**의 리포트를 작성해 주세요.
+**[작성 지침]**
+1. **형식**: Markdown (제목 #, 소제목 ## 사용).
+2. **톤앤매너**: 목적은 '${purpose}', 어조는 '${tone}'입니다.
+3. **데이터 준수**: 입력된 JSON 데이터에 기반해서만 서술하세요. 추측성 서술은 지양하세요.
+  `;
 
-**[처리 원칙 및 지침]**
-1. **출력 형식**: 오직 **Markdown 형식**의 텍스트여야 합니다. 제목(#), 소제목(##), 목록(*)을 사용하여 섹션 구조를 따르십시오.
-2. **데이터 기반 서술**: 입력된 JSON(\`summary_stats\`, \`activity_samples\`)에 포함된 데이터만 사용해야 합니다. 없는 내용은 "데이터로 확인 불가"라고 명시하십시오.
-3. **톤 조절**: \`report_options.purpose\`와 \`tone\`에 맞춰 문체를 조절하십시오(예: 학부모 상담용은 부드럽게, 내부 공유용은 분석적으로).
+  let specificInstruction = "";
+  let structureGuide = "";
 
-**[입력 데이터 구조]**
-\`\`\`json
-{
-  "student_profile": { ... },
-  "date_range": { "start_date": "...", "end_date": "..." },
-  "summary_stats": {
-    "emotion_distribution": { ... },
-    "ability_levels": { ... }
-  },
-  "activity_samples": [ ... ],
-  "report_options": {
-    "purpose": "...",
-    "tone": "..."
-  }
-}
-\`\`\`
+  // 카테고리 문자열 공백 제거 및 정규화 (매칭 오류 방지용)
+  const safeCategory = category ? category.trim() : "전체 리포트";
 
-**[출력 Markdown 섹션 구조]**
+  switch (safeCategory) {
+    case "감정 변화":
+      specificInstruction = `
+**[분석 초점: 감정 변화]**
+- 기간 동안 학생의 정서적 흐름(안정감, 불안 등)이 어떻게 변화했는지 분석하세요.
+- 특정 활동이나 시간대, 환경 요인(Trigger)과 감정의 상관관계를 파악하세요.
+- 긍정적 감정이 나타난 사례와 부정적 감정이 해소된 과정을 중점적으로 서술하세요.
+      `;
+      structureGuide = `
+# 1. 감정 변화 요약
+# 2. 주요 감정 흐름 분석
+(기간 초반 vs 후반 변화 등)
+# 3. 감정 유발 요인 (Trigger) 및 반응
+# 4. 정서적 안정을 위한 제언
+# 5. 마무리
+      `;
+      break;
+
+    case "활동 유동 변화":
+      specificInstruction = `
+**[분석 초점: 활동 유동 변화]**
+- 학생의 활동 참여 패턴이 어떻게 변화했는지(특정 활동 집중, 다양성 증가 등) 분석하세요.
+- 활동의 전환(전이) 과정에서의 적응도와 유연성을 평가하세요.
+- 선호 활동과 비선호 활동 간의 참여 시간 변화 추이를 서술하세요.
+      `;
+      structureGuide = `
+# 1. 활동 패턴 요약
+# 2. 활동 유형별 참여 변화
+(시간 비중 변화, 새로운 활동 시도 등)
+# 3. 활동 전이 및 참여 태도 분석
+# 4. 활동 다양성 증진을 위한 제언
+# 5. 마무리
+      `;
+      break;
+
+    case "활동 능력 변화":
+      specificInstruction = `
+**[분석 초점: 활동 능력 변화]**
+- 활동 수행 수준(매우 우수~도전적)의 변화 추이를 분석하세요.
+- 이전에 어려워했던(도전적) 활동에서 성취를 보인 '성장 사례'를 찾으세요.
+- 영역별(인지, 운동, 사회성 등) 능력 발달의 불균형이나 특이점을 서술하세요.
+      `;
+      structureGuide = `
+# 1. 능력 성장 요약
+# 2. 영역별 수행 능력 변화 추이
+(성취도가 향상된 영역 위주)
+# 3. 주요 성취 사례 (Success Story)
+# 4. 향후 발달 목표 및 지도 방안
+# 5. 마무리
+      `;
+      break;
+
+    case "전체 리포트":
+    default:
+      specificInstruction = `
+**[분석 초점: 종합 보고서]**
+- 학생의 학교생활 전반(감정, 행동, 학습, 사회성)을 균형 있게 요약하세요.
+- 강점 위주로 서술하되, 지원이 필요한 부분도 명확히 명시하세요.
+- 모든 영역(감정, 활동, 능력)을 아우르는 통합적 관점을 유지하세요.
+      `;
+      structureGuide = `
 # 1. 기본 정보
 # 2. 전체 개요
 # 3. 강점과 긍정적 변화
 # 4. 도움이 필요한 영역
 # 5. 감정 및 행동 패턴
-# 6. 활동별 능력 분석 요약
+# 6. 활동별 능력 분석
 # 7. 지원 제안 및 다음 단계
 # 8. 마무리 문장
-`;
+      `;
+      break;
+  }
+
+  return `
+${baseInstruction}
+
+${specificInstruction}
+
+**[입력 데이터]**
+{input_json}
+
+**[출력 리포트 목차 구조]**
+${structureGuide}
+  `;
+};
 
 module.exports = {
   PDF_TXT_EXTRACTION_PROMPT,
-  REPORT_GENERATION_PROMPT,
+  GET_REPORT_PROMPT,
 };
