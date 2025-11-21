@@ -1246,6 +1246,194 @@ app.get(
   },
 )
 
+// -------------------- 대시보드 Gemini 채팅 API (/api/dashboard/chat) --------------------
+/**
+ * POST /api/dashboard/chat
+ * body: {
+ *   studentId: string | null,
+ *   studentName: string | null,
+ *   startDate: 'YYYY-MM-DD' | null,
+ *   endDate: 'YYYY-MM-DD' | null,
+ *   message: string,        // 사용자가 방금 입력한 질문
+ *   history: [{ role: 'user'|'assistant', content: string }]
+ * }
+ *
+ * 응답: { answer: string }
+ */
+app.post('/api/dashboard/chat', async (req, res) => {
+  const {
+    studentId,
+    studentName,
+    startDate,
+    endDate,
+    message,
+    history = [],
+  } = req.body || {}
+
+  if (!message || typeof message !== 'string') {
+    return res
+      .status(400)
+      .json({ message: 'message 필드는 필수입니다.' })
+  }
+
+  try {
+    // 1) 선택된 학생/기간의 로그를 Supabase에서 조회
+    let logs = []
+    if (studentId && startDate && endDate) {
+      let query = supabase
+        .from('log_entries')
+        .select(
+          'log_date, emotion_tag, related_metrics, activity_tags, notes, created_at',
+        )
+        .eq('student_id', studentId)
+        .gte('log_date', startDate)
+        .lte('log_date', endDate)
+
+      const { data, error } = await query
+
+      if (error) {
+        console.error('POST /api/dashboard/chat DB 에러:', error)
+      } else {
+        logs = data || []
+      }
+    }
+
+    // 2) 간단한 통계/요약 만들기 (감정 비율 등)
+    const recordCount = logs.length
+    let pos = 0
+    let neg = 0
+    let neu = 0
+    const emotionSamples = []
+
+    logs.forEach((l, idx) => {
+      const tag = (l.emotion_tag || '').toString()
+
+      if (!tag) {
+        neu++
+      } else if (/(기쁨|행복|만족|즐거움|긍정|편안)/.test(tag)) {
+        pos++
+      } else if (/(불안|걱정|우울|슬픔|화|짜증|분노|부정)/.test(tag)) {
+        neg++
+      } else {
+        neu++
+      }
+
+      // 프롬프트에 넣을 샘플 10개 정도만 추려서 전달
+      if (idx < 10) {
+        emotionSamples.push({
+          date:
+            l.log_date ||
+            (l.created_at ? String(l.created_at).slice(0, 10) : null),
+          emotion_tag: tag,
+          activity_tags: l.activity_tags || null,
+          score:
+            (l.related_metrics && l.related_metrics.score) ??
+            (l.related_metrics && l.related_metrics.level_score) ??
+            null,
+          notes: l.notes || null,
+        })
+      }
+    })
+
+    const positivePercent =
+      recordCount > 0 ? Math.round((pos / recordCount) * 100) : 0
+
+    // 이전 대화 내용을 문자열로 정리
+    const historyText = (history || [])
+      .map(h => `${h.role === 'user' ? '교사' : 'AI'}: ${h.content}`)
+      .join('\n')
+
+    const statsForPrompt = {
+      studentId,
+      studentName,
+      period: { startDate, endDate },
+      recordCount,
+      emotionCounts: { positive: pos, negative: neg, neutral: neu },
+      positivePercent,
+      emotionSamples,
+    }
+
+    // 3) Gemini에 보낼 프롬프트 작성
+    const systemPrompt = `
+당신은 텃밭/농장 활동 기록을 분석해서 학생의 감정, 활동, 성장 패턴을 교사가 이해하기 쉽게 설명해 주는 한국어 AI 도우미입니다.
+
+- 데이터에 근거해서 차분하고 구체적으로 설명하세요.
+- 학부모 상담이나 기록 작성에 바로 쓸 수 있도록 요약과 해석을 제공합니다.
+- 너무 장황하지 않게 3~6문단 이내로 정리하고, 필요하면 글머리 기호를 사용해 주세요.
+`
+
+    const userPrompt = `
+[학생 및 기간 정보]
+- 학생 이름: ${studentName || '이름 미상'}
+- 학생 ID: ${studentId || 'N/A'}
+- 기간: ${startDate || '-'} ~ ${endDate || '-'}
+
+[요약 데이터(JSON)]
+${JSON.stringify(statsForPrompt, null, 2)}
+
+[이전 대화]
+${historyText || '(이전 대화 없음)'}
+
+[교사의 질문]
+"""${message}"""
+
+위 정보를 바탕으로, 교사가 이해하기 쉬운 한국어로 답변해 주세요.
+데이터가 부족한 부분이 있다면 "이 부분은 데이터가 부족합니다"라고 솔직하게 말해 주세요.
+`
+
+    if (!process.env.GEMINI_API_KEY) {
+      console.error('GEMINI_API_KEY가 설정되어 있지 않습니다.')
+      return res
+        .status(500)
+        .json({ message: 'Gemini API key not configured.' })
+    }
+
+    // 4) Gemini API 호출 (REST)
+    const geminiUrl =
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent' +
+      `?key=${process.env.GEMINI_API_KEY}`
+
+    const geminiResponse = await fetch(geminiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [
+          { role: 'user', parts: [{ text: systemPrompt }] },
+          { role: 'user', parts: [{ text: userPrompt }] },
+        ],
+      }),
+    })
+
+    if (!geminiResponse.ok) {
+      const errorText = await geminiResponse.text()
+      console.error(
+        'Gemini API error:',
+        geminiResponse.status,
+        errorText,
+      )
+      return res.status(500).json({
+        message: 'Gemini API Error',
+        detail: errorText,
+      })
+    }
+
+    const geminiJson = await geminiResponse.json()
+    const answer =
+      geminiJson?.candidates?.[0]?.content?.parts
+        ?.map(p => p.text || '')
+        .join('') ||
+      'AI 응답을 불러오지 못했습니다. 프롬프트나 서버 설정을 확인해 주세요.'
+
+    return res.json({ answer })
+  } catch (e) {
+    console.error('POST /api/dashboard/chat 에러:', e)
+    return res
+      .status(500)
+      .json({ message: 'Chat Error', error: e.toString() })
+  }
+})
+
+
 // -------------------- 서버 시작 --------------------
 
 app.listen(port, () => {

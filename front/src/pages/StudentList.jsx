@@ -81,18 +81,27 @@ export default function StudentList() {
     try {
       const res = await apiFetch('/api/students', { method: 'GET' })
 
-      let list = []
+      // 백엔드 응답은 { count, items: [...] } 형태이므로 여기서 정규화
+      let rawList = []
       if (Array.isArray(res)) {
-        list = res
-      } else if (Array.isArray(res?.data)) {
-        list = res.data
+        rawList = res
       } else if (Array.isArray(res?.items)) {
-        list = res.items
+        rawList = res.items
+      } else if (Array.isArray(res?.data)) {
+        rawList = res.data
       } else {
         throw new Error('학생 목록 응답 형식이 올바르지 않습니다.')
       }
 
-      setStudents(list)
+      const normalized = rawList.map(s => ({
+        id: s.id,
+        // 별명은 nickname / nick_name / notes 순으로 우선 사용
+        nickname: s.nickname ?? s.nick_name ?? s.notes ?? '',
+        // 본명은 realName / real_name / full_name / name 순으로 우선 사용
+        realName: s.realName ?? s.real_name ?? s.full_name ?? s.name ?? '',
+      }))
+
+      setStudents(normalized)
     } catch (e) {
       console.error(e)
       setError(e.message || '학생 목록을 불러오는 중 오류가 발생했습니다.')
@@ -104,22 +113,18 @@ export default function StudentList() {
   // ───────────────── 신규 학생 추가 ─────────────────
   async function handleCreate(e) {
     e.preventDefault()
-    if (!newRealName.trim()) {
-      alert('학생 본명을 입력해 주세요.')
-      return
-    }
+    if (!newNickname.trim() || !newRealName.trim()) return
 
     setCreating(true)
     setError('')
 
     try {
       const body = {
-        // supabase 컬럼명에 맞춤
-        name: newRealName.trim(), // 본명
-        notes: newNickname.trim(), // 별명
-        status: newStatus || '재학중',
-        admission_date: newAdmissionDate || null,
-        birth_date: newBirthDate || null,
+        // 백엔드 /api/students 는 name, status, notes 를 사용하므로
+        // 본명 -> name, 별명 -> notes 에 저장한다.
+        name: newRealName.trim(),
+        status: '재학중',
+        notes: newNickname.trim(),
       }
 
       const res = await apiFetch('/api/students', {
@@ -127,14 +132,29 @@ export default function StudentList() {
         body: JSON.stringify(body),
       })
 
-      const created = res?.data && res.data.id ? res.data : res
+      const createdRaw =
+        res?.data && res.data.id
+          ? res.data
+          : res // 공통 래퍼/직접 응답 둘 다 대응
+
+      const created = {
+        id: createdRaw.id,
+        nickname:
+          createdRaw.nickname ??
+          createdRaw.nick_name ??
+          createdRaw.notes ??
+          newNickname.trim(),
+        realName:
+          createdRaw.realName ??
+          createdRaw.real_name ??
+          createdRaw.full_name ??
+          createdRaw.name ??
+          newRealName.trim(),
+      }
 
       setStudents(prev => [...prev, created])
       setNewNickname('')
       setNewRealName('')
-      setNewStatus('재학중')
-      setNewAdmissionDate('')
-      setNewBirthDate('')
     } catch (e) {
       console.error(e)
       setError(e.message || '학생 추가 중 오류가 발생했습니다.')
@@ -142,6 +162,7 @@ export default function StudentList() {
       setCreating(false)
     }
   }
+
 
   // ───────────────── 수정 모달 ─────────────────
   function openEditModal(student) {
@@ -165,30 +186,42 @@ export default function StudentList() {
 
   async function handleSaveEdit() {
     if (!editingStudent) return
-    if (!editRealName.trim()) {
-      alert('학생 본명을 입력해 주세요.')
-      return
-    }
+    if (!editNickname.trim() || !editRealName.trim()) return
 
     setSavingEdit(true)
     setError('')
 
     try {
       const body = {
+        // 서버에서는 name/notes 만 업데이트하면 되도록 맞춘다.
         name: editRealName.trim(),
         notes: editNickname.trim(),
-        status: editStatus || '재학중',
-        admission_date: editAdmissionDate || null,
-        birth_date: editBirthDate || null,
       }
 
       const res = await apiFetch(`/api/students/${editingStudent.id}`, {
-        method: 'PUT',
+        method: 'PATCH',              // 서버는 PATCH 사용 중
         body: JSON.stringify(body),
       })
 
-      const updated =
-        res?.data && res.data.id ? res.data : { ...editingStudent, ...body }
+      const updatedRaw =
+        res?.data && res.data.id
+          ? res.data
+          : { id: editingStudent.id, ...body }
+
+      const updated = {
+        id: updatedRaw.id,
+        nickname:
+          updatedRaw.nickname ??
+          updatedRaw.nick_name ??
+          updatedRaw.notes ??
+          editNickname.trim(),
+        realName:
+          updatedRaw.realName ??
+          updatedRaw.real_name ??
+          updatedRaw.full_name ??
+          updatedRaw.name ??
+          editRealName.trim(),
+      }
 
       setStudents(prev =>
         prev.map(s => (s.id === editingStudent.id ? updated : s)),

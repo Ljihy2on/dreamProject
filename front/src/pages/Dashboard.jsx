@@ -25,6 +25,13 @@ export default function Dashboard() {
   const [queriedStartDate, setQueriedStartDate] = useState('')
   const [queriedEndDate, setQueriedEndDate] = useState('')
 
+  // 🔹 Gemini 대화 (대시보드 채팅)
+  const [isChatOpen, setIsChatOpen] = useState(false)
+  const [chatInput, setChatInput] = useState('')
+  const [chatMessages, setChatMessages] = useState([])
+  const [chatLoading, setChatLoading] = useState(false)
+  const [chatError, setChatError] = useState(null)
+
   // 🔹 대시보드 데이터
   const [metrics, setMetrics] = useState({
     recordCount: 0,
@@ -162,11 +169,7 @@ export default function Dashboard() {
             item.uuid ??
             null
           const name =
-            item.name ??
-            item.student_name ??
-            item.full_name ??
-            item.display_name ??
-            '이름 없음'
+            item.name ?? item.student_name ?? item.full_name ?? item.display_name ?? '이름 없음'
           return id ? { id: String(id), name } : null
         })
         .filter(Boolean)
@@ -288,6 +291,113 @@ export default function Dashboard() {
       startDate,
       endDate,
     })
+  }
+
+  // 🔹 대시보드 Gemini 채팅 열기
+// 🔹 대시보드 Gemini 채팅 열기 / 닫기 (토글)
+function handleOpenChat() {
+  // 1) 채팅창이 떠 있을 때 버튼을 누르면 닫기
+  if (isChatOpen) {
+    setIsChatOpen(false)
+    return
+  }
+
+  // 2) 채팅창이 닫혀 있을 때는 기존처럼 열기 + 검증
+  if (!queriedStudent || !queriedStartDate || !queriedEndDate) {
+    alert('먼저 학생과 기간을 선택해 검색을 완료한 뒤에 채팅을 사용할 수 있습니다.')
+    return
+  }
+
+  setChatError(null)
+  setIsChatOpen(true)
+
+  // 처음 열 때만 안내 메시지
+  if (!chatMessages.length) {
+    setChatMessages([
+      {
+        id: 'intro',
+        role: 'assistant',
+        content: `${queriedStudent.name} 학생의 ${queriedStartDate} ~ ${queriedEndDate} 기록을 기반으로 대화를 도와드릴게요.\n무엇이 궁금하신가요?`,
+      },
+    ])
+  }
+}
+
+
+  // 🔹 채팅 닫기
+  function handleCloseChat() {
+    setIsChatOpen(false)
+  }
+
+  // 🔹 Gemini에게 질문 보내기
+  async function handleChatSubmit(e) {
+    e.preventDefault()
+    if (!chatInput.trim()) return
+
+    if (!queriedStudent || !queriedStartDate || !queriedEndDate) {
+      alert('대화를 시작하려면 먼저 학생과 기간을 선택해 검색해 주세요.')
+      return
+    }
+
+    const userMessage = {
+      id: `user-${Date.now()}`,
+      role: 'user',
+      content: chatInput.trim(),
+    }
+
+    const nextMessages = [...chatMessages, userMessage]
+    setChatMessages(nextMessages)
+    setChatInput('')
+    setChatLoading(true)
+    setChatError(null)
+
+    try {
+      const payload = {
+        studentId: queriedStudent?.id || selectedStudentId || null,
+        studentName: queriedStudent?.name || null,
+        startDate: queriedStartDate,
+        endDate: queriedEndDate,
+        message: userMessage.content,
+        history: nextMessages.map(m => ({
+          role: m.role,
+          content: m.content,
+        })),
+      }
+
+      // 🔸 백엔드에서 이 엔드포인트를 Gemini API와 연결해 주세요.
+      const res = await apiFetch('/api/dashboard/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+
+      const aiText =
+        (res && (res.answer || res.message || res.content || res.text)) ||
+        'AI 응답을 불러오지 못했습니다. 백엔드 설정을 확인해 주세요.'
+
+      const aiMessage = {
+        id: `assistant-${Date.now()}`,
+        role: 'assistant',
+        content: aiText,
+      }
+
+      setChatMessages(prev => [...prev, aiMessage])
+    } catch (err) {
+      console.error(err)
+      setChatError(
+        err?.message ||
+          '대화 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.',
+      )
+      const errorMessage = {
+        id: `assistant-error-${Date.now()}`,
+        role: 'assistant',
+        content:
+          '대화 중 오류가 발생했습니다. 서버 연결 상태를 확인해 주세요.',
+      }
+      setChatMessages(prev => [...prev, errorMessage])
+    } finally {
+      setChatLoading(false)
+    }
   }
 
   const excellentCount = abilityList.filter(
@@ -963,6 +1073,101 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+
+      {/* Gemini 대시보드 채팅 패널 */}
+      {isChatOpen && (
+        <div className="dashboard-chat-overlay">
+          <div className="dashboard-chat-window">
+            <div className="dashboard-chat-header">
+              <div>
+                <div className="dashboard-chat-title">Gemini 대화</div>
+                <div className="dashboard-chat-subtitle">
+                  {queriedStudentLabel} 학생 · {queriedStartDate || '시작일'} ~{' '}
+                  {queriedEndDate || '종료일'}
+                </div>
+              </div>
+              <button
+                type="button"
+                className="chat-close-btn"
+                onClick={handleCloseChat}
+                aria-label="채팅 닫기"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="dashboard-chat-body">
+              <div className="dashboard-chat-messages">
+                {chatMessages.length === 0 ? (
+                  <div className="chat-empty muted">
+                    {queriedStudent && queriedStartDate && queriedEndDate
+                      ? `${queriedStudentLabel} 학생의 ${queriedStartDate} ~ ${queriedEndDate} 데이터에 대해 궁금한 점을 물어보세요.`
+                      : '학생과 기간을 선택해 검색한 뒤 채팅을 시작할 수 있습니다.'}
+                  </div>
+                ) : (
+                  chatMessages.map(msg => (
+                    <div
+                      key={msg.id}
+                      className={
+                        'chat-message ' +
+                        (msg.role === 'user'
+                          ? 'chat-message-user'
+                          : 'chat-message-assistant')
+                      }
+                    >
+                      <div className="chat-message-bubble">
+                        {msg.content}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {chatLoading && (
+                <div className="chat-status muted">
+                  Gemini가 답변을 작성하고 있습니다...
+                </div>
+              )}
+              {chatError && (
+                <div className="chat-error-text">
+                  {chatError}
+                </div>
+              )}
+
+              <form
+                className="dashboard-chat-input-row"
+                onSubmit={handleChatSubmit}
+              >
+                <textarea
+                  className="dashboard-chat-input"
+                  rows={2}
+                  placeholder="예: 이 기간 동안 학생의 감정 변화 특징을 정리해줘"
+                  value={chatInput}
+                  onChange={e => setChatInput(e.target.value)}
+                  disabled={chatLoading}
+                />
+                <button
+                  type="submit"
+                  className="btn chat-send-btn"
+                  disabled={chatLoading || !chatInput.trim()}
+                >
+                  {chatLoading ? '전송 중...' : '전송'}
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 오른쪽 하단 플로팅 채팅 버튼 */}
+      <button
+        type="button"
+        className="floating-chat-btn"
+        onClick={handleOpenChat}
+        aria-label="Gemini 채팅 열기"
+      >
+        💬
+      </button>
     </Layout>
   )
 }

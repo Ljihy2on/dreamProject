@@ -3792,3 +3792,184 @@ button:hover {
   flex: 1;
 }
 
+/* 오른쪽 하단 플로팅 버튼 */
+.floating-chat-btn {
+  position: fixed;
+  right: 32px;
+  bottom: 32px;
+  width: 56px;
+  height: 56px;
+  border-radius: 999px;
+  border: none;
+  outline: none;
+  cursor: pointer;
+  background: linear-gradient(135deg, #7b4dff 0%, #f04fff 100%);
+  color: #ffffff;
+  font-size: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 10px 25px rgba(120, 81, 255, 0.45);
+  z-index: 1900;
+}
+
+.floating-chat-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 30px rgba(120, 81, 255, 0.5);
+}
+
+.floating-chat-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 8px 18px rgba(120, 81, 255, 0.35);
+}
+
+/* 대쉬보드 채팅 전체 컨테이너 (오른쪽 하단 고정) */
+.dashboard-chat-overlay {
+  position: fixed;
+  right: 32px;
+  bottom: 104px; /* 플로팅 버튼 위로 띄우기 */
+  z-index: 2000;
+  pointer-events: none; /* 밖은 클릭 통과, 카드만 클릭 가능 */
+}
+
+/* 실제 채팅 카드 – 더 넓고, 훨씬 더 높게 */
+.dashboard-chat-window {
+  width: 420px;          /* 기존 360px → 더 넓게 */
+  height: 70vh;          /* 화면 높이의 70% 정도 (기존의 2배 이상 느낌) */
+  max-height: 820px;     /* 너무 커지지 않게 상한만 설정 */
+  background: #ffffff;
+  border-radius: 18px;
+  box-shadow: 0 18px 35px rgba(15, 23, 42, 0.28);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  pointer-events: auto;
+  font-size: 13px;
+}
+
+.dashboard-chat-header {
+  padding: 14px 16px;
+  background: linear-gradient(135deg, #7b4dff 0%, #f04fff 100%);
+  color: #ffffff;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+/* 본문 영역이 카드 높이에 맞게 꽉 차도록 */
+.dashboard-chat-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: #f9fafb;
+}
+
+/* 메시지 영역 – flex:1로 위쪽을 크게 사용, 별도 max-height 제한 제거 */
+.dashboard-chat-messages {
+  flex: 1;
+  padding: 12px 12px 8px;
+  overflow-y: auto;
+}
+
+/* 이하 메시지 버블 스타일은 그대로 사용 */
+.chat-message {
+  margin-bottom: 8px;
+  display: flex;
+}
+
+.chat-message-user {
+  justify-content: flex-end;
+}
+
+.chat-message-assistant {
+  justify-content: flex-start;
+}
+
+.chat-message-bubble {
+  max-width: 80%;
+  padding: 8px 10px;
+  border-radius: 14px;
+  line-height: 1.5;
+  word-break: keep-all;
+  white-space: pre-wrap;
+  font-size: 12px;
+}
+
+.chat-message-user .chat-message-bubble {
+  background: #4f46e5;
+  color: #ffffff;
+  border-bottom-right-radius: 4px;
+}
+
+.chat-message-assistant .chat-message-bubble {
+  background: #ffffff;
+  color: #111827;
+  border-bottom-left-radius: 4px;
+  box-shadow: 0 1px 3px rgba(148, 163, 184, 0.45);
+}
+
+/* ───────── 채팅 입력 영역 ───────── */
+
+.dashboard-chat-input-row {
+  margin-top: 4px;
+  padding: 10px 12px 12px;
+  border-top: 1px solid #e5e7eb;
+  background: #ffffff;
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+/* 텍스트 입력창: 회색 배경 + 둥근 모양 */
+.dashboard-chat-input {
+  flex: 1;
+  resize: none;
+  border-radius: 16px;
+  border: none;
+  background: #f3f4f6;
+  padding: 10px 12px;
+  font-size: 12px;
+  min-height: 40px;
+  max-height: 80px;
+  line-height: 1.4;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.dashboard-chat-input::placeholder {
+  color: #9ca3af;
+}
+
+/* 전송 버튼: 오른쪽 동그란 버튼 (그라데이션) */
+.dashboard-chat-input-row .chat-send-btn {
+  border: none;
+  border-radius: 999px;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  background: linear-gradient(135deg, #3b82f6 0%, #6366f1 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: #ffffff;
+  cursor: pointer;
+  box-shadow: 0 8px 18px rgba(59, 130, 246, 0.4);
+}
+
+.dashboard-chat-input-row .chat-send-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 22px rgba(59, 130, 246, 0.45);
+}
+
+.dashboard-chat-input-row .chat-send-btn:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: 0 6px 14px rgba(59, 130, 246, 0.35);
+}
+
+.dashboard-chat-input-row .chat-send-btn:disabled {
+  opacity: 0.5;
+  box-shadow: none;
+  cursor: default;
+}
