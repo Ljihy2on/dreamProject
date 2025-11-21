@@ -117,12 +117,12 @@ export default function Dashboard() {
   const [activityModalOpen, setActivityModalOpen] = useState(false)
 
   // 🔹 시작일 > 종료일인지 여부 (검증용)
-  const isInvalidRange =
-    startDate && endDate && startDate > endDate
+  const isInvalidRange = startDate && endDate && startDate > endDate
 
   // 요약 숫자 계산
   const recordCount = metrics?.recordCount ?? demoMetrics.recordCount
-  const positivePercent = metrics?.positivePercent ?? demoMetrics.positivePercent
+  const positivePercent =
+    metrics?.positivePercent ?? demoMetrics.positivePercent
 
   // Emotion 차트용 원본 데이터 (없으면 데모)
   const emotionChartData =
@@ -135,7 +135,10 @@ export default function Dashboard() {
       const raw = typeof item.value === 'number' ? item.value : 0
       // 0~100 값이면 0~10으로, 0~10이면 그대로 사용
       const scoreFromPercent = raw > 10 ? raw / 10 : raw
-      const score10 = Math.max(0, Math.min(10, Math.round(scoreFromPercent * 10) / 10))
+      const score10 = Math.max(
+        0,
+        Math.min(10, Math.round(scoreFromPercent * 10) / 10),
+      )
       return {
         ...item,
         score10,
@@ -227,8 +230,7 @@ export default function Dashboard() {
 
   // 감정 상세 모달용 요약 문장
   const emotionSummaryText = useMemo(() => {
-    const positiveItem =
-      emotionScaleItems[0] || emotionChartData[0]
+    const positiveItem = emotionScaleItems[0] || emotionChartData[0]
     const pos = positiveItem?.score10 ?? positivePercent / 10
 
     return `${selectedStudentLabel} 학생은 선택한 기간 동안 전반적으로 긍정적인 감정을 많이 경험했습니다. 특히 평균 감정 강도는 약 ${pos.toFixed(
@@ -250,23 +252,36 @@ export default function Dashboard() {
     )}/10). 수확·관리·관찰 등 다양한 활동에서 전반적으로 긍정적인 감정이 고르게 나타나고 있습니다.`
   }, [activityEmotionCards, selectedStudentLabel])
 
-  // 학생 목록 불러오기
+  // 🔹 대시보드에서 사용할 학생 목록 가져오기
   async function fetchStudents() {
     try {
-      const res = await apiFetch('/api/students', { method: 'GET' })
-      if (Array.isArray(res)) {
-        setStudents(res)
-        if (res.length > 0) {
-          setSelectedStudentId(res[0].id)
-        }
-      } else {
-        setStudents(demoStudents)
-        setSelectedStudentId(demoStudents[0].id)
+      // supabase에 있는 학생 전체를 보고 싶으니까 limit을 넉넉하게 줌
+      const res = await apiFetch('/api/students?limit=1000&offset=0', {
+        method: 'GET',
+      })
+
+      // 백엔드 응답: { count, items: [...] }
+      let list = []
+
+      if (res && Array.isArray(res.items)) {
+        list = res.items
+      } else if (Array.isArray(res)) {
+        // 혹시라도 API를 바꿔서 배열 그대로 주는 경우까지 커버
+        list = res
       }
+
+      // 만약 학생이 아직 하나도 없다면 데모 데이터 사용
+      if (!list || list.length === 0) {
+        list = demoStudents
+      }
+
+      setStudents(list)
+      setSelectedStudentId(list[0]?.id || '')
     } catch (e) {
       console.error(e)
+      // 에러 나도 화면이 완전히 비지 않도록 데모로 fallback
       setStudents(demoStudents)
-      setSelectedStudentId(demoStudents[0].id)
+      setSelectedStudentId(demoStudents[0]?.id || '')
     }
   }
 
@@ -391,7 +406,9 @@ export default function Dashboard() {
                           <select
                             className="student-select"
                             value={selectedStudentId}
-                            onChange={e => setSelectedStudentId(e.target.value)}
+                            onChange={e =>
+                              setSelectedStudentId(e.target.value)
+                            }
                           >
                             <option value="">학생 선택</option>
                             {students.map(s => (
@@ -515,7 +532,7 @@ export default function Dashboard() {
                     className="btn secondary emotion-detail-btn"
                     onClick={() => setEmotionModalOpen(true)}
                   >
-                    클릭하여 상세보기
+                    상세보기
                   </button>
                 </div>
 
@@ -526,15 +543,10 @@ export default function Dashboard() {
                   </div>
                   <div className="emotion-scale-list">
                     {emotionScaleItems.map(item => (
-                      <div
-                        key={item.name}
-                        className="emotion-scale-row"
-                      >
+                      <div key={item.name} className="emotion-scale-row">
                         <div className="emotion-scale-label">
                           <div className="emotion-name">{item.name}</div>
-                          <div className="emotion-scale-minmax">
-                            나쁨
-                          </div>
+                          <div className="emotion-scale-minmax">나쁨</div>
                         </div>
                         <div className="emotion-scale-bar-wrap">
                           <div className="emotion-score-info">
@@ -566,10 +578,7 @@ export default function Dashboard() {
                   </div>
                   <div className="activity-emotion-grid">
                     {activityEmotionCards.map(card => (
-                      <div
-                        key={card.id}
-                        className="activity-emotion-card"
-                      >
+                      <div key={card.id} className="activity-emotion-card">
                         <div className="activity-emotion-card-top">
                           <div className="activity-emotion-icon">
                             {card.icon}
@@ -643,9 +652,7 @@ export default function Dashboard() {
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="date" />
                     <YAxis unit="분" />
-                    <Tooltip
-                      formatter={value => [`${value}분`, '활동 시간']}
-                    />
+                    <Tooltip formatter={value => [`${value}분`, '활동 시간']} />
                     <Bar
                       dataKey="minutes"
                       fill="#3b82f6"
@@ -988,10 +995,7 @@ export default function Dashboard() {
                   const levelType = source?.levelType || 'good'
                   const levelLabel = source?.levelLabel || '보통'
                   return (
-                    <div
-                      key={card.id}
-                      className="activity-detail-row"
-                    >
+                    <div key={card.id} className="activity-detail-row">
                       <div>{card.activity}</div>
                       <div>
                         <div>{card.emotion}</div>

@@ -1290,10 +1290,6 @@ export default function UploadPage() {
       <section className="upload-status-section">
         <div className="upload-status-header">
           <h2 className="section-title">업로드 현황</h2>
-          <p className="section-helper">
-            ingest_uploads / log_entries에 저장될 업로드 처리 현황을
-            확인할 수 있습니다.
-          </p>
         </div>
 
         {loading && (

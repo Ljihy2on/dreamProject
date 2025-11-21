@@ -95,48 +95,56 @@ app.post(['/auth/login', '/api/auth/login'], async (req, res) => {
  * - 프론트에서 FormData 로 file 하나만 보냄
  * - Supabase ingest_uploads 에 메타데이터만 기록 (Storage 업로드는 생략)
  */
-app.post(['/uploads', '/api/uploads'], upload.single('file'), async (req, res) => {
-  try {
-    const file = req.file
-    if (!file) {
-      return res.status(400).json({ message: '파일이 필요합니다.' })
+app.post(
+  ['/uploads', '/api/uploads'],
+  upload.single('file'),
+  async (req, res) => {
+    try {
+      const file = req.file
+      if (!file) {
+        return res.status(400).json({ message: '파일이 필요합니다.' })
+      }
+
+      // multer가 latin1 인코딩으로 이름을 줄 수 있어서 UTF-8로 복원
+      const originalName = Buffer.from(file.originalname, 'latin1').toString(
+        'utf8',
+      )
+
+      const now = new Date().toISOString()
+      const storageKey = `uploads/${Date.now()}-${originalName}`
+
+      const { data, error } = await supabase
+        .from('ingest_uploads')
+        .insert([
+          {
+            file_name: originalName,
+            storage_key: storageKey,
+            student_id: null,
+            uploaded_by: null, // 로그인 유저와 연결하려면 Authorization 헤더에서 id를 꺼내서 넣으면 됨
+            status: 'queued',
+            progress: 0,
+            error: null,
+            created_at: now,
+            updated_at: now,
+          },
+        ])
+        .select()
+        .single()
+
+      if (error) {
+        console.error('ingest_uploads insert 에러:', error)
+        return res.status(500).json({ message: 'DB Error', error })
+      }
+
+      res.status(201).json(data)
+    } catch (e) {
+      console.error('POST /uploads 에러:', e)
+      res
+        .status(500)
+        .json({ message: 'Upload Error', error: e.toString() })
     }
-
-    // multer가 latin1 인코딩으로 이름을 줄 수 있어서 UTF-8로 복원
-    const originalName = Buffer.from(file.originalname, 'latin1').toString('utf8')
-
-    const now = new Date().toISOString()
-    const storageKey = `uploads/${Date.now()}-${originalName}`
-
-    const { data, error } = await supabase
-      .from('ingest_uploads')
-      .insert([
-        {
-          file_name: originalName,
-          storage_key: storageKey,
-          student_id: null,
-          uploaded_by: null, // 로그인 유저와 연결하려면 Authorization 헤더에서 id를 꺼내서 넣으면 됨
-          status: 'queued',
-          progress: 0,
-          error: null,
-          created_at: now,
-          updated_at: now,
-        },
-      ])
-      .select()
-      .single()
-
-    if (error) {
-      console.error('ingest_uploads insert 에러:', error)
-      return res.status(500).json({ message: 'DB Error', error })
-    }
-
-    res.status(201).json(data)
-  } catch (e) {
-    console.error('POST /uploads 에러:', e)
-    res.status(500).json({ message: 'Upload Error', error: e.toString() })
-  }
-})
+  },
+)
 
 /**
  * GET /uploads, /api/uploads
@@ -186,7 +194,9 @@ app.get(['/uploads', '/api/uploads'], async (req, res) => {
     res.json(uploads)
   } catch (e) {
     console.error('GET /uploads 에러:', e)
-    res.status(500).json({ message: 'Server Error', error: e.toString() })
+    res
+      .status(500)
+      .json({ message: 'Server Error', error: e.toString() })
   }
 })
 
@@ -211,33 +221,15 @@ app.get(['/uploads/:id', '/api/uploads/:id'], async (req, res) => {
     res.json(data)
   } catch (e) {
     console.error('GET /uploads/:id 에러:', e)
-    res.status(500).json({ message: 'Server Error', error: e.toString() })
+    res
+      .status(500)
+      .json({ message: 'Server Error', error: e.toString() })
   }
 })
 
 // -------------------- 업로드 로그 저장 (/uploads/:id/log) --------------------
 /**
  * POST /uploads/:id/log, /api/uploads/:id/log
- *
- * payload 형식 (UploadPage.jsx 기준):
- * {
- *   upload_id: "업로드 UUID",
- *   file_name: "파일명.pdf",
- *   raw_text: "원본/정제 텍스트",
- *   log_entries: [
- *     {
- *       student_id: "...",
- *       student_name: "...",   // 프론트 표시용 (DB에는 안 씀)
- *       log_date: "2025-11-21",
- *       emotion_tag: "기쁨",
- *       emotion_tags: ["기쁨", "안정"],  // 아직은 DB에 직접 안 씀
- *       activity_tags: ["미술", "글쓰기"],
- *       log_content: "...",
- *       related_metrics: { ... } // jsonb
- *     },
- *     ...
- *   ]
- * }
  */
 app.post(['/uploads/:id/log', '/api/uploads/:id/log'], async (req, res) => {
   const { id } = req.params
@@ -250,16 +242,15 @@ app.post(['/uploads/:id/log', '/api/uploads/:id/log'], async (req, res) => {
   }
 
   try {
-    // 1) log_entries 테이블에 기록할 값 정리
     const rows = log_entries
       .filter(e => e && e.student_id)
       .map(e => ({
         log_date: e.log_date || new Date().toISOString().slice(0, 10),
         student_id: e.student_id,
         emotion_tag: e.emotion_tag || null,
-        activity_tags: e.activity_tags || null, // text[]
+        activity_tags: e.activity_tags || null,
         log_content: e.log_content || null,
-        related_metrics: e.related_metrics || null, // jsonb
+        related_metrics: e.related_metrics || null,
         source_file_path: file_name || null,
       }))
 
@@ -269,7 +260,6 @@ app.post(['/uploads/:id/log', '/api/uploads/:id/log'], async (req, res) => {
         .json({ message: '학생 정보가 있는 기록이 없습니다.' })
     }
 
-    // 2) log_entries 여러 건 insert
     const { data: inserted, error: insertErr } = await supabase
       .from('log_entries')
       .insert(rows)
@@ -277,12 +267,12 @@ app.post(['/uploads/:id/log', '/api/uploads/:id/log'], async (req, res) => {
 
     if (insertErr) {
       console.error('log_entries insert 에러:', insertErr)
-      return res
-        .status(500)
-        .json({ message: 'log_entries 저장 중 오류', error: insertErr })
+      return res.status(500).json({
+        message: 'log_entries 저장 중 오류',
+        error: insertErr,
+      })
     }
 
-    // 3) ingest_uploads 에 대표 student_id / 상태 업데이트
     const firstStudentId = rows[0].student_id
 
     const { error: upErr } = await supabase
@@ -296,7 +286,6 @@ app.post(['/uploads/:id/log', '/api/uploads/:id/log'], async (req, res) => {
 
     if (upErr) {
       console.error('ingest_uploads 업데이트 에러:', upErr)
-      // 치명적이진 않으니 에러 로그만 남기고 계속 진행
     }
 
     return res.status(201).json({
@@ -307,17 +296,16 @@ app.post(['/uploads/:id/log', '/api/uploads/:id/log'], async (req, res) => {
     })
   } catch (e) {
     console.error('POST /uploads/:id/log 에러:', e)
-    return res
-      .status(500)
-      .json({ message: 'Upload log save error', error: e.toString() })
+    return res.status(500).json({
+      message: 'Upload log save error',
+      error: e.toString(),
+    })
   }
 })
 
 // -------------------- log_entries 조회 (UploadPage 상세용) --------------------
 /**
  * GET /log_entries?upload_id=...
- * - upload_id 로 ingest_uploads 를 찾고, 해당 student_id 의 로그를 최근 순으로 반환
- * - UploadPage.jsx 에서 상세 보기 시 사용
  */
 app.get('/log_entries', async (req, res) => {
   const { upload_id } = req.query
@@ -359,15 +347,14 @@ app.get('/log_entries', async (req, res) => {
     res.json(data || [])
   } catch (e) {
     console.error('GET /log_entries 에러:', e)
-    res.status(500).json({ message: 'Server Error', error: e.toString() })
+    res
+      .status(500)
+      .json({ message: 'Server Error', error: e.toString() })
   }
 })
 
-// -------------------- Supabase 스타일 REST 프록시 (UploadPage 저장용) --------------------
-/**
- * POST /rest/v1/log_entries
- * - body 전체를 log_entries 에 insert(1건) 하는 간단 프록시
- */
+// -------------------- Supabase 스타일 REST 프록시 --------------------
+
 app.post('/rest/v1/log_entries', async (req, res) => {
   try {
     const body = req.body || {}
@@ -386,14 +373,12 @@ app.post('/rest/v1/log_entries', async (req, res) => {
     res.status(201).json(data)
   } catch (e) {
     console.error('POST /rest/v1/log_entries 에러:', e)
-    res.status(500).json({ message: 'DB Error', error: e.toString() })
+    res
+      .status(500)
+      .json({ message: 'DB Error', error: e.toString() })
   }
 })
 
-/**
- * POST /rest/v1/log_entry_tags
- * - body: [{ log_entry_id, tag_id }, ...]
- */
 app.post('/rest/v1/log_entry_tags', async (req, res) => {
   try {
     const rows = Array.isArray(req.body) ? req.body : []
@@ -414,14 +399,12 @@ app.post('/rest/v1/log_entry_tags', async (req, res) => {
     res.status(201).json(data)
   } catch (e) {
     console.error('POST /rest/v1/log_entry_tags 에러:', e)
-    res.status(500).json({ message: 'Server Error', error: e.toString() })
+    res
+      .status(500)
+      .json({ message: 'Server Error', error: e.toString() })
   }
 })
 
-/**
- * GET /rest/v1/tags?select=*
- * - 감정 키워드 전체 조회용 간단 프록시
- */
 app.get('/rest/v1/tags', async (req, res) => {
   try {
     const { data, error } = await supabase
@@ -443,268 +426,14 @@ app.get('/rest/v1/tags', async (req, res) => {
     res.json(rows)
   } catch (e) {
     console.error('GET /rest/v1/tags 에러:', e)
-    res.status(500).json({ message: 'Server Error', error: e.toString() })
+    res
+      .status(500)
+      .json({ message: 'Server Error', error: e.toString() })
   }
 })
 
-/**
- * POST /rest/v1/tags
- * - 새로운 감정 키워드 추가
- */
 app.post('/rest/v1/tags', async (req, res) => {
   try {
     const { name } = req.body || {}
-    if (!name) {
-      return res.status(400).json({ message: 'name 필드가 필요합니다.' })
-    }
-
-    const { data, error } = await supabase
-      .from('tags')
-      .insert([{ name }])
-      .select()
-      .single()
-
-    if (error) {
-      console.error('tags insert 에러:', error)
-      return res.status(500).json({ message: 'DB Error', error })
-    }
-
-    res.status(201).json(data)
-  } catch (e) {
-    console.error('POST /rest/v1/tags 에러:', e)
-    res.status(500).json({ message: 'Server Error', error: e.toString() })
-  }
-})
-
-// -------------------- /api/students, /api/log_entries --------------------
-// (Dashboard, StudentList 페이지에서 사용)
-
-app.get('/api/students', async (req, res) => {
-  const { status, limit = 50, offset = 0 } = req.query
-
-  let query = supabase
-    .from('students')
-    .select('*', { count: 'exact' })
-    .order('created_at', { ascending: true })
-    .range(Number(offset), Number(offset) + Number(limit) - 1)
-
-  if (status) {
-    query = query.eq('status', status)
-  }
-
-  const { data, error, count } = await query
-
-  if (error) {
-    console.error('students 목록 조회 에러:', error)
-    return res.status(500).json({ message: 'DB Error', error })
-  }
-
-  res.json({
-    count,
-    items: data,
-  })
-})
-
-app.get('/api/students/:id', async (req, res) => {
-  const { id } = req.params
-
-  const { data, error } = await supabase
-    .from('students')
-    .select('*')
-    .eq('id', id)
-    .single()
-
-  if (error || !data) {
-    console.error('students 상세 조회 에러:', error)
-    return res.status(404).json({ message: '학생을 찾을 수 없습니다.', error })
-  }
-
-  res.json(data)
-})
-
-app.post('/api/students', async (req, res) => {
-  const { name, status = '재학중', admission_date, birth_date, notes } = req.body
-
-  if (!name) {
-    return res.status(400).json({ message: 'name은 필수입니다.' })
-  }
-
-  const { data, error } = await supabase
-    .from('students')
-    .insert([
-      {
-        name,
-        status,
-        admission_date,
-        birth_date,
-        notes,
-      },
-    ])
-    .select()
-    .single()
-
-  if (error) {
-    console.error('students 추가 에러:', error)
-    return res.status(500).json({ message: 'DB Error', error })
-  }
-
-  res.status(201).json(data)
-})
-
-app.patch('/api/students/:id', async (req, res) => {
-  const { id } = req.params
-  const { name, status, admission_date, birth_date, notes } = req.body
-
-  const updateData = {}
-  if (name !== undefined) updateData.name = name
-  if (status !== undefined) updateData.status = status
-  if (admission_date !== undefined) updateData.admission_date = admission_date
-  if (birth_date !== undefined) updateData.birth_date = birth_date
-  if (notes !== undefined) updateData.notes = notes
-
-  const { data, error } = await supabase
-    .from('students')
-    .update(updateData)
-    .eq('id', id)
-    .select()
-    .single()
-
-  if (error) {
-    console.error('students 수정 에러:', error)
-    return res.status(500).json({ message: 'DB Error', error })
-  }
-
-  res.json(data)
-})
-
-app.delete('/api/students/:id', async (req, res) => {
-  const { id } = req.params
-
-  const { error } = await supabase.from('students').delete().eq('id', id)
-
-  if (error) {
-    console.error('students 삭제 에러:', error)
-    return res.status(500).json({ message: 'DB Error', error })
-  }
-
-  res.status(204).send()
-})
-
-// log_entries 목록/상세/추가/수정/삭제
-app.get('/api/log_entries', async (req, res) => {
-  const {
-    student_id,
-    from, // 시작 날짜
-    to, // 종료 날짜
-    status,
-    limit = 50,
-    offset = 0,
-  } = req.query
-
-  let query = supabase
-    .from('log_entries')
-    .select('*', { count: 'exact' })
-    .order('log_date', { ascending: true })
-    .range(Number(offset), Number(offset) + Number(limit) - 1)
-
-  if (student_id) {
-    query = query.eq('student_id', student_id)
-  }
-  if (from) {
-    query = query.gte('log_date', from)
-  }
-  if (to) {
-    query = query.lte('log_date', to)
-  }
-  if (status) {
-    query = query.eq('status', status)
-  }
-
-  const { data, error, count } = await query
-
-  if (error) {
-    console.error('log_entries 목록 조회 에러:', error)
-    return res.status(500).json({ message: 'DB Error', error })
-  }
-
-  res.json({
-    count,
-    items: data,
-  })
-})
-
-app.get('/api/log_entries/:id', async (req, res) => {
-  const { id } = req.params
-
-  const { data, error } = await supabase
-    .from('log_entries')
-    .select('*')
-    .eq('id', id)
-    .single()
-
-  if (error || !data) {
-    console.error('log_entries 상세 조회 에러:', error)
-    return res.status(404).json({ message: '기록을 찾을 수 없습니다.', error })
-  }
-
-  res.json(data)
-})
-
-app.patch('/api/log_entries/:id', async (req, res) => {
-  const { id } = req.params
-  const {
-    log_date,
-    student_id,
-    observer_id,
-    emotion_tag,
-    activity_tags,
-    log_content,
-    related_metrics,
-    status,
-    source_file_path,
-  } = req.body
-
-  const updateData = {}
-  if (log_date !== undefined) updateData.log_date = log_date
-  if (student_id !== undefined) updateData.student_id = student_id
-  if (observer_id !== undefined) updateData.observer_id = observer_id
-  if (emotion_tag !== undefined) updateData.emotion_tag = emotion_tag
-  if (activity_tags !== undefined) updateData.activity_tags = activity_tags
-  if (log_content !== undefined) updateData.log_content = log_content
-  if (related_metrics !== undefined) updateData.related_metrics = related_metrics
-  if (status !== undefined) updateData.status = status
-  if (source_file_path !== undefined) updateData.source_file_path = source_file_path
-
-  const { data, error } = await supabase
-    .from('log_entries')
-    .update(updateData)
-    .eq('id', id)
-    .select()
-    .single()
-
-  if (error) {
-    console.error('log_entries 수정 에러:', error)
-    return res.status(500).json({ message: 'DB Error', error })
-  }
-
-  res.json(data)
-})
-
-app.delete('/api/log_entries/:id', async (req, res) => {
-  const { id } = req.params
-
-  const { error } = await supabase.from('log_entries').delete().eq('id', id)
-
-  if (error) {
-    console.error('log_entries 삭제 에러:', error)
-    return res.status(500).json({ message: 'DB Error', error })
-  }
-
-  res.status(204).send()
-})
-
-// -------------------- 서버 시작 --------------------
-
-app.listen(port, () => {
-  console.log(`서버 실행중: http://localhost:${port}`)
-})
+ 
+::contentReference[oaicite:1]{index=1}

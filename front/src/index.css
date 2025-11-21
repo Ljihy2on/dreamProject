@@ -3691,3 +3691,17 @@ button:hover {
     padding: 20px 18px;
   }
 }
+
+/* 활동 유형 분포 카드 헤더: 버튼을 오른쪽 끝으로 정렬 */
+.activity-card-header {
+  display: flex;
+  align-items: center;       /* 세로 가운데 정렬 */
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* 안에 있는 텍스트 블록이 너무 넓게 퍼지지 않도록 */
+.activity-card-header > div {
+  flex: 1;
+}
+
