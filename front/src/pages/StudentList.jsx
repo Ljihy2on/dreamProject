@@ -1,309 +1,872 @@
-// src/pages/StudentDetail.jsx
+// src/pages/StudentList.jsx
 import React, { useEffect, useState } from 'react'
-import { apiFetch } from '../lib/api.js'
 import Layout from '../components/Layout'
-import { useParams } from 'react-router-dom'
+import { apiFetch } from '../lib/api'
 
-function normalizeStudentResponse(res, studentId) {
-  if (!res) return { id: studentId, name: '데모 학생' }
-
-  // server.js 에서 { data: {...} } 또는 { data: [...] } 형태일 수 있음
-  if (Array.isArray(res?.data)) {
-    return res.data[0] || { id: studentId, name: '데모 학생' }
-  }
-  if (res?.data && typeof res.data === 'object') {
-    return res.data
-  }
-
-  // 단순 배열 응답
-  if (Array.isArray(res)) {
-    return res[0] || { id: studentId, name: '데모 학생' }
-  }
-
-  // 그냥 객체 하나 내려온 경우
-  return res
-}
-
-function normalizeLogsResponse(res) {
+// 서버 응답 형태를 통합해서 students 배열로 변환
+function normalizeStudentsResponse(res) {
   if (!res) return []
-
-  // { items: [...] }
   if (Array.isArray(res.items)) return res.items
-
-  // { data: [...] }
   if (Array.isArray(res.data)) return res.data
-
-  // 단순 배열
   if (Array.isArray(res)) return res
-
   return []
 }
 
-export default function StudentDetail(props) {
-  const params = useParams()
-  const effectiveStudentId = props.studentId ?? params.studentId
+// 상태 드롭다운에서 사용할 옵션들
+const STATUS_OPTIONS = ['재학중', '졸업', '중도이탈', '휴학']
 
-  const [student, setStudent] = useState(null)
-  const [activities, setActivities] = useState([])
+export default function StudentList() {
+  const [students, setStudents] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
+  // ▶ 학생 추가용 상태들
+  const [newName, setNewName] = useState('')
+  const [newStatus, setNewStatus] = useState('재학중')
+  const [newAdmissionDate, setNewAdmissionDate] = useState('')
+  const [newBirthDate, setNewBirthDate] = useState('')
+  const [newLogContent, setNewLogContent] = useState('')
+  const [creating, setCreating] = useState(false)
+
+  // ▶ 수정용 모달 상태
+  const [editingStudent, setEditingStudent] = useState(null)
+  const [editForm, setEditForm] = useState({
+    name: '',
+    status: '',
+    admission_date: '',
+    birth_date: '',
+    log_content: '',
+  })
+  const [savingEdit, setSavingEdit] = useState(false)
+
+  // ▶ 삭제 처리 중인 학생 id
+  const [deletingId, setDeletingId] = useState(null)
+
+  // -------------------- 초기 학생 목록 조회 --------------------
   useEffect(() => {
-    if (!effectiveStudentId) return
+    fetchStudents()
+  }, [])
 
-    ;(async () => {
-      try {
-        setLoading(true)
-        setError('')
+  async function fetchStudents() {
+    try {
+      setLoading(true)
+      setError('')
 
-        // ✅ 학생 정보 불러오기
-        const resStudent = await apiFetch(
-          `/api/students/${effectiveStudentId}`,
-        ).catch(() => null)
-        const normalizedStudent = normalizeStudentResponse(
-          resStudent,
-          effectiveStudentId,
-        )
-        setStudent(normalizedStudent)
-
-        // ✅ 활동 로그 불러오기
-        const logsRes = await apiFetch(
-          `/api/log_entries?student_id=${effectiveStudentId}&limit=50&offset=0`,
-        ).catch(() => null)
-        const acts = normalizeLogsResponse(logsRes)
-        setActivities(acts)
-      } catch (e) {
-        console.error(e)
-        setError('학생 정보 또는 활동 기록을 불러오는 중 오류가 발생했습니다.')
-      } finally {
-        setLoading(false)
-      }
-    })()
-  }, [effectiveStudentId])
-
-  // 이름/별명 매핑 (StudentList 와 동일한 규칙)
-  const nickname = student?.nickname ?? student?.notes ?? ''
-  const realName = student?.realName ?? student?.name ?? ''
-  const displayName =
-    nickname && realName
-      ? `${nickname}(${realName})`
-      : nickname || realName || '학생 상세'
-
-  // 기타 필드들
-  const school = student?.school || '학교 정보 없음'
-  const grade = student?.grade || ''
-  const status = student?.status || '재학중'
-
-  const admissionDate = student?.admission_date
-    ? new Date(student.admission_date).toLocaleDateString('ko-KR')
-    : null
-  const birthDate = student?.birth_date
-    ? new Date(student.birth_date).toLocaleDateString('ko-KR')
-    : null
-
-  if (!effectiveStudentId) {
-    return (
-      <Layout title="학생 상세">
-        <div style={{ padding: 16 }}>학생 ID가 필요합니다.</div>
-      </Layout>
-    )
+      const res = await apiFetch('/api/students?limit=200&offset=0')
+      const list = normalizeStudentsResponse(res)
+      setStudents(list)
+    } catch (e) {
+      console.error(e)
+      setError('학생 목록을 불러오는 중 오류가 발생했습니다.')
+    } finally {
+      setLoading(false)
+    }
   }
 
+  // -------------------- 학생 추가 --------------------
+  async function handleCreate(e) {
+    e.preventDefault()
+    if (!newName.trim()) {
+      setError('이름을 입력해주세요.')
+      return
+    }
+
+    try {
+      setCreating(true)
+      setError('')
+
+      const payload = {
+        name: newName.trim(),
+        status: newStatus || null,
+        admission_date: newAdmissionDate || null,
+        birth_date: newBirthDate || null,
+        log_content: newLogContent || null,
+      }
+
+      const created = await apiFetch('/api/students', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+
+      setStudents(prev => [...prev, created])
+
+      // 입력창 초기화
+      setNewName('')
+      setNewStatus('재학중')
+      setNewAdmissionDate('')
+      setNewBirthDate('')
+      setNewLogContent('')
+    } catch (e) {
+      console.error(e)
+      setError(e.message || '학생 추가 중 오류가 발생했습니다.')
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  // -------------------- 학생 수정 --------------------
+  function openEditModal(student) {
+    setEditingStudent(student || null)
+
+    if (student) {
+      setEditForm({
+        name: student.name || '',
+        status: student.status || '',
+        admission_date: student.admission_date
+          ? String(student.admission_date).slice(0, 10)
+          : '',
+        birth_date: student.birth_date
+          ? String(student.birth_date).slice(0, 10)
+          : '',
+        log_content: student.log_content || '',
+      })
+    } else {
+      setEditForm({
+        name: '',
+        status: '',
+        admission_date: '',
+        birth_date: '',
+        log_content: '',
+      })
+    }
+  }
+
+  function closeEditModal() {
+    setEditingStudent(null)
+  }
+
+  function handleEditChange(e) {
+    const { name, value } = e.target
+    setEditForm(prev => ({ ...prev, [name]: value }))
+  }
+
+  async function handleEditSave(e) {
+    e.preventDefault()
+    if (!editingStudent) return
+
+    try {
+      setSavingEdit(true)
+      setError('')
+
+      const payload = {
+        name: editForm.name,
+        status: editForm.status || null,
+        admission_date: editForm.admission_date || null,
+        birth_date: editForm.birth_date || null,
+        log_content: editForm.log_content || null,
+      }
+
+      const updated = await apiFetch(`/api/students/${editingStudent.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+
+      setStudents(prev =>
+        prev.map(s => (s.id === editingStudent.id ? { ...s, ...updated } : s)),
+      )
+
+      closeEditModal()
+    } catch (e) {
+      console.error(e)
+      setError(e.message || '학생 수정 중 오류가 발생했습니다.')
+    } finally {
+      setSavingEdit(false)
+    }
+  }
+
+  // -------------------- 학생 삭제 --------------------
+  async function handleDelete(student) {
+    if (!student) return
+    if (!window.confirm(`"${student.name}" 학생을 정말 삭제하시겠어요?`)) return
+
+    try {
+      setDeletingId(student.id)
+      setError('')
+
+      await apiFetch(`/api/students/${student.id}`, {
+        method: 'DELETE',
+      })
+
+      setStudents(prev => prev.filter(s => s.id !== student.id))
+    } catch (e) {
+      console.error(e)
+      setError(e.message || '학생 삭제 중 오류가 발생했습니다.')
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
+  function getDisplayName(student) {
+    const realName = student.realName || student.name || ''
+    const nickname = student.nickname || student.log_content || ''
+    if (nickname && realName) return `${nickname}(${realName})`
+    return nickname || realName || '이름 없음'
+  }
+
+  // -------------------- JSX --------------------
   return (
-    <Layout title={displayName}>
-      {/* 상단 학생 요약 카드 */}
-      <div
-        style={{
-          marginBottom: 16,
-          padding: 20,
-          borderRadius: 18,
-          border: '1px solid #e5e7eb',
-          background: '#ffffff',
-        }}
-      >
+    <Layout title="학생 관리">
+      <div className="page-container" style={{ padding: 16 }}>
+        {/* 상단 헤더 */}
         <div
+          className="page-header"
           style={{
             display: 'flex',
-            gap: 16,
+            justifyContent: 'space-between',
             alignItems: 'center',
-            marginBottom: 8,
+            marginBottom: 16,
           }}
         >
-          <div
-            style={{
-              width: 40,
-              height: 40,
-              borderRadius: 999,
-              border: '1px solid #e5e7eb',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: 18,
-              fontWeight: 600,
-              background: '#f9fafb',
-            }}
-          >
-            {(nickname || realName || '학').charAt(0)}
-          </div>
           <div>
-            <div
-              style={{
-                fontSize: 18,
-                fontWeight: 600,
-                marginBottom: 4,
-              }}
-            >
-              {displayName}
-            </div>
-            <div className="muted" style={{ fontSize: 13 }}>
-              {school}
-              {grade ? ` · ${grade}` : ''}
-            </div>
+            <h1 style={{ fontSize: 20, fontWeight: 600, marginBottom: 4 }}>
+              학생 관리
+            </h1>
+            <p className="muted" style={{ fontSize: 13 }}>
+              학생을 추가/수정/삭제 할 수 있습니다.
+            </p>
           </div>
         </div>
 
-        <div
-          style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            gap: 12,
-            marginTop: 8,
-            fontSize: 13,
-          }}
-        >
+        {/* 에러 / 로딩 */}
+        {error && (
           <div
             style={{
-              padding: '4px 10px',
-              borderRadius: 999,
-              background: '#eff6ff',
-              color: '#1d4ed8',
+              marginBottom: 12,
+              padding: '8px 12px',
+              borderRadius: 10,
+              background: '#fef2f2',
+              color: '#b91c1c',
+              fontSize: 13,
             }}
           >
-            상태: {status}
+            {error}
           </div>
-          {admissionDate && (
-            <div
-              style={{
-                padding: '4px 10px',
-                borderRadius: 999,
-                background: '#f9fafb',
-              }}
-            >
-              입학일: {admissionDate}
-            </div>
-          )}
-          {birthDate && (
-            <div
-              style={{
-                padding: '4px 10px',
-                borderRadius: 999,
-                background: '#f9fafb',
-              }}
-            >
-              생년월일: {birthDate}
-            </div>
-          )}
-          {student?.notes && (
-            <div
-              style={{
-                padding: '4px 10px',
-                borderRadius: 999,
-                background: '#f3f4f6',
-              }}
-            >
-              별명 메모: {student.notes}
-            </div>
-          )}
-        </div>
-      </div>
+        )}
 
-      {/* 로딩 / 에러 */}
-      {loading && (
-        <div className="muted" style={{ marginBottom: 8 }}>
-          불러오는 중...
-        </div>
-      )}
-      {error && (
+        {loading && (
+          <div className="muted" style={{ marginBottom: 8, fontSize: 13 }}>
+            학생 목록을 불러오는 중입니다...
+          </div>
+        )}
+
+        {/* ▶ 학생 추가 폼 */}
         <div
-          className="error"
+          className="card"
           style={{
-            marginBottom: 12,
-            padding: '8px 12px',
-            borderRadius: 10,
-            background: '#fef2f2',
-            color: '#b91c1c',
-            fontSize: 13,
+            marginBottom: 16,
+            padding: 16,
+            borderRadius: 16,
+            border: '1px solid #e5e7eb',
+            background: '#ffffff',
           }}
         >
-          {error}
+          <form onSubmit={handleCreate}>
+            {/* 1행: 이름 + 상태 + 입학일 + 생년월일 (같은 라인) */}
+           <div
+             style={{
+               display: 'flex',
+               flexWrap: 'wrap',
+               gap: 16,
+               alignItems: 'center',
+               marginBottom: 8,
+             }}
+           >
+             {/* 학생 이름 */}
+             <div
+               style={{
+                 display: 'flex',
+                 alignItems: 'center',
+                 gap: 6,
+               }}
+             >
+               <span
+                 style={{
+                   fontSize: 13,
+                   color: '#6b7280',
+                   minWidth: 64,
+                   flexShrink: 0,
+                 }}
+               >
+                 학생 이름
+               </span>
+               <input
+                 className="app-input"
+                 type="text"
+                 placeholder="예: 홍길동"
+                 value={newName}
+                 onChange={e => setNewName(e.target.value)}
+                 style={{
+                   width: 140,
+                 }}
+               />
+             </div>
+
+             {/* 상태 */}
+             <div
+               style={{
+                 display: 'flex',
+                 alignItems: 'center',
+                 gap: 6,
+               }}
+             >
+               <span
+                 style={{
+                   fontSize: 13,
+                   color: '#6b7280',
+                   minWidth: 40,
+                   flexShrink: 0,
+                 }}
+               >
+                 상태
+               </span>
+               <select
+                 className="app-input"
+                 value={newStatus}
+                 onChange={e => setNewStatus(e.target.value)}
+                 style={{
+                   width: 140,
+                   paddingRight: 28, // 드롭다운 화살표 여백
+                 }}
+               >
+                 {STATUS_OPTIONS.map(opt => (
+                   <option key={opt} value={opt}>
+                     {opt}
+                   </option>
+                 ))}
+               </select>
+             </div>
+
+             {/* 입학일 */}
+             <div
+               style={{
+                 display: 'flex',
+                 alignItems: 'center',
+                 gap: 6,
+               }}
+             >
+               <span
+                 style={{
+                   fontSize: 13,
+                   color: '#6b7280',
+                   minWidth: 48,
+                   flexShrink: 0,
+                 }}
+               >
+                 입학일
+               </span>
+               <input
+                 className="app-input"
+                 type="date"
+                 value={newAdmissionDate}
+                 onChange={e => setNewAdmissionDate(e.target.value)}
+                 style={{
+                   width: 140,
+                   borderRadius: 999,
+                 }}
+               />
+             </div>
+
+             {/* 생년월일 */}
+             <div
+               style={{
+                 display: 'flex',
+                 alignItems: 'center',
+                 gap: 6,
+               }}
+             >
+               <span
+                 style={{
+                   fontSize: 13,
+                   color: '#6b7280',
+                   minWidth: 60,
+                   flexShrink: 0,
+                 }}
+               >
+                 생년월일
+               </span>
+               <input
+                 className="app-input"
+                 type="date"
+                 value={newBirthDate}
+                 onChange={e => setNewBirthDate(e.target.value)}
+                 style={{
+                   width: 140,
+                   borderRadius: 999,
+                 }}
+               />
+             </div>
+           </div>
+
+           {/* 2행: 메모 (넓은 textarea) */}
+           <div style={{ marginBottom: 8 }}>
+             <div
+               style={{
+                 fontSize: 13,
+                 color: '#6b7280',
+                 marginBottom: 4,
+               }}
+             >
+               메모(별명/특이사항)
+             </div>
+             <textarea
+               className="app-textarea"
+               placeholder="예: 좋아하는 활동, 특이사항 등을 적어주세요."
+               value={newLogContent}
+               onChange={e => setNewLogContent(e.target.value)}
+               rows={4}
+               style={{
+                 width: '98%',
+                 minWidth: 200,
+                 fontSize: 13,
+               }}
+             />
+            </div>
+
+            {/* 하단: 학생 추가 버튼 (컨테이너 하단 우측) */}
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'flex-end',
+                marginTop: 4,
+              }}
+            >
+              <button
+                type="submit"
+                className="btn primary"
+                disabled={creating}
+                style={{
+                  padding: '8px 14px',
+                  borderRadius: 999,
+                  border: 'none',
+                  fontSize: 14,
+                  fontWeight: 500,
+                  background: '#2563eb',
+                  color: '#ffffff',
+                  cursor: creating ? 'default' : 'pointer',
+                  opacity: creating ? 0.7 : 1,
+                }}
+              >
+                {creating ? '추가 중...' : '학생 추가'}
+              </button>
+            </div>
+          </form>
         </div>
-      )}
 
-      {/* 활동 리스트 */}
-      <section>
-        <h3
+        {/* ▶ 학생 목록 테이블 */}
+        <div
+          className="card"
           style={{
-            fontSize: 16,
-            fontWeight: 600,
-            marginBottom: 8,
+            borderRadius: 16,
+            border: '1px solid #e5e7eb',
+            background: '#ffffff',
+            overflow: 'hidden',
           }}
         >
-          활동 기록
-        </h3>
-
-        {activities.length === 0 ? (
-          <div className="muted" style={{ fontSize: 13 }}>
-            활동 기록이 없습니다.
-          </div>
-        ) : (
-          <div
+          <table
             style={{
-              borderRadius: 12,
-              border: '1px solid #e5e7eb',
-              overflow: 'hidden',
+              width: '100%',
+              borderCollapse: 'collapse',
+              fontSize: 14,
             }}
           >
-            {activities.map(a => {
-              const dateLabel =
-                a.log_date || a.created_at || a.activity_date || ''
-              const textSnippet =
-                (a.log_content ||
-                  a.content ||
-                  a.raw_text ||
-                  a.text ||
-                  '') || ''
-
-              return (
-                <div
-                  key={a.id}
-                  className="list-item"
+            <thead
+              style={{
+                background: '#f9fafb',
+                borderBottom: '1px solid #e5e7eb',
+              }}
+            >
+              <tr>
+                <th
                   style={{
-                    padding: '10px 14px',
-                    borderBottom: '1px solid #f3f4f6',
-                    background: '#ffffff',
+                    textAlign: 'left',
+                    padding: '10px 12px',
+                    fontWeight: 500,
+                    fontSize: 13,
+                    color: '#6b7280',
                   }}
                 >
-                  <div
+                  이름
+                </th>
+                <th
+                  style={{
+                    textAlign: 'left',
+                    padding: '10px 12px',
+                    fontWeight: 500,
+                    fontSize: 13,
+                    color: '#6b7280',
+                  }}
+                >
+                  상태
+                </th>
+                <th
+                  style={{
+                    textAlign: 'left',
+                    padding: '10px 12px',
+                    fontWeight: 500,
+                    fontSize: 13,
+                    color: '#6b7280',
+                  }}
+                >
+                  입학일
+                </th>
+                <th
+                  style={{
+                    textAlign: 'left',
+                    padding: '10px 12px',
+                    fontWeight: 500,
+                    fontSize: 13,
+                    color: '#6b7280',
+                  }}
+                >
+                  비고(메모)
+                </th>
+                <th
+                  style={{
+                    width: 180,
+                    textAlign: 'right',
+                    padding: '10px 12px',
+                    fontWeight: 500,
+                    fontSize: 13,
+                    color: '#6b7280',
+                  }}
+                >
+                  작업
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {students.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={5}
                     style={{
-                      fontSize: 12,
-                      marginBottom: 4,
+                      padding: '14px 12px',
+                      fontSize: 13,
                       color: '#6b7280',
                     }}
                   >
-                    {dateLabel}
-                  </div>
-                  <div style={{ fontSize: 14, whiteSpace: 'pre-wrap' }}>
-                    {textSnippet.slice(0, 200)}
-                    {textSnippet.length > 200 && '…'}
-                  </div>
-                </div>
-              )
-            })}
+                    학생이 없습니다. 상단에서 새 학생을 추가해보세요.
+                  </td>
+                </tr>
+              ) : (
+                students.map(student => {
+                  const displayName = getDisplayName(student)
+                  const statusLabel = student.status || '재학중'
+                  const admissionDate = student.admission_date
+                    ? String(student.admission_date).slice(0, 10)
+                    : ''
+
+                  return (
+                    <tr
+                      key={student.id}
+                      style={{ borderBottom: '1px solid #f3f4f6' }}
+                    >
+                      <td style={{ padding: '10px 12px' }}>{displayName}</td>
+                      <td
+                        style={{
+                          padding: '10px 12px',
+                          fontSize: 13,
+                          color: '#4b5563',
+                        }}
+                      >
+                        {statusLabel}
+                      </td>
+                      <td
+                        style={{
+                          padding: '10px 12px',
+                          fontSize: 13,
+                          color: '#4b5563',
+                        }}
+                      >
+                        {admissionDate || '-'}
+                      </td>
+                      <td
+                        style={{
+                          padding: '10px 12px',
+                          fontSize: 13,
+                          color: '#6b7280',
+                          maxWidth: 260,
+                          whiteSpace: 'nowrap',
+                          textOverflow: 'ellipsis',
+                          overflow: 'hidden',
+                        }}
+                        title={student.log_content || ''}
+                      >
+                        {student.log_content || ''}
+                      </td>
+                      <td
+                        style={{
+                          padding: '10px 12px',
+                          textAlign: 'right',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        <button
+                          type="button"
+                          className="btn secondary"
+                          onClick={() => openEditModal(student)}
+                          style={{
+                            marginRight: 8,
+                            padding: '6px 10px',
+                            borderRadius: 999,
+                            border: '1px solid #d1d5db',
+                            background: '#ffffff',
+                            fontSize: 13,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          수정
+                        </button>
+                        <button
+                          type="button"
+                          className="btn danger"
+                          onClick={() => handleDelete(student)}
+                          disabled={deletingId === student.id}
+                          style={{
+                            padding: '6px 10px',
+                            borderRadius: 999,
+                            border: 'none',
+                            background: '#ef4444',
+                            color: '#ffffff',
+                            fontSize: 13,
+                            cursor:
+                              deletingId === student.id ? 'default' : 'pointer',
+                            opacity: deletingId === student.id ? 0.7 : 1,
+                          }}
+                        >
+                          {deletingId === student.id ? '삭제 중...' : '삭제'}
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* 수정 모달 */}
+      {editingStudent && (
+        <div
+          className="modal-backdrop"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15,23,42,0.35)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 50,
+          }}
+        >
+          <div
+            className="modal"
+            style={{
+              width: '100%',
+              maxWidth: 480,
+              borderRadius: 18,
+              background: '#ffffff',
+              padding: 20,
+              boxShadow:
+                '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)',
+            }}
+          >
+            <div
+              style={{
+                marginBottom: 12,
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}
+            >
+              <h2
+                style={{
+                  fontSize: 16,
+                  fontWeight: 600,
+                }}
+              >
+                학생 정보 수정
+              </h2>
+              <button
+                type="button"
+                onClick={closeEditModal}
+                style={{
+                  border: 'none',
+                  background: 'transparent',
+                  fontSize: 18,
+                  cursor: 'pointer',
+                }}
+              >
+                ×
+              </button>
+            </div>
+
+            <form
+              onSubmit={handleEditSave}
+              style={{ display: 'flex', flexDirection: 'column', gap: 10 }}
+            >
+              <label style={{ fontSize: 13 }}>
+                이름
+                <input
+                  type="text"
+                  name="name"
+                  value={editForm.name}
+                  onChange={handleEditChange}
+                  required
+                  style={{
+                    width: '100%',
+                    marginTop: 4,
+                    padding: '8px 10px',
+                    borderRadius: 10,
+                    border: '1px solid #d1d5db',
+                    fontSize: 14,
+                  }}
+                />
+              </label>
+
+              <label style={{ fontSize: 13 }}>
+                상태
+                {/* 상태 드롭다운 (수정 모달) */}
+                {(() => {
+                  const hasCustomStatus =
+                    editForm.status &&
+                    !STATUS_OPTIONS.includes(editForm.status)
+                  const options = hasCustomStatus
+                    ? [editForm.status, ...STATUS_OPTIONS]
+                    : STATUS_OPTIONS
+
+                  return (
+                    <select
+                      name="status"
+                      value={editForm.status || ''}
+                      onChange={handleEditChange}
+                      style={{
+                        width: '100%',
+                        marginTop: 4,
+                        padding: '8px 10px',
+                        borderRadius: 10,
+                        border: '1px solid #d1d5db',
+                        fontSize: 14,
+                        backgroundColor: '#ffffff',
+                      }}
+                    >
+                      <option value="">선택 없음</option>
+                      {options.map(opt => (
+                        <option key={opt} value={opt}>
+                          {opt}
+                        </option>
+                      ))}
+                    </select>
+                  )
+                })()}
+              </label>
+
+              <label style={{ fontSize: 13 }}>
+                입학일
+                <input
+                  type="date"
+                  name="admission_date"
+                  value={editForm.admission_date || ''}
+                  onChange={handleEditChange}
+                  style={{
+                    width: '100%',
+                    marginTop: 4,
+                    padding: '8px 10px',
+                    borderRadius: 10,
+                    border: '1px solid #d1d5db',
+                    fontSize: 14,
+                  }}
+                />
+              </label>
+
+              <label style={{ fontSize: 13 }}>
+                생년월일
+                <input
+                  type="date"
+                  name="birth_date"
+                  value={editForm.birth_date || ''}
+                  onChange={handleEditChange}
+                  style={{
+                    width: '100%',
+                    marginTop: 4,
+                    padding: '8px 10px',
+                    borderRadius: 10,
+                    border: '1px solid #d1d5db',
+                    fontSize: 14,
+                  }}
+                />
+              </label>
+
+              <label style={{ fontSize: 13 }}>
+                메모(별명/특이사항)
+                <textarea
+                  name="log_content"
+                  value={editForm.log_content}
+                  onChange={handleEditChange}
+                  rows={4} // 메모 영역 조금 더 넓게
+                  style={{
+                    width: '100%',
+                    marginTop: 4,
+                    padding: '8px 10px',
+                    borderRadius: 10,
+                    border: '1px solid #d1d5db',
+                    fontSize: 14,
+                    resize: 'vertical',
+                  }}
+                  placeholder="이 학생에 대한 간단한 메모를 남겨보세요."
+                />
+              </label>
+
+              <div
+                style={{
+                  marginTop: 8,
+                  display: 'flex',
+                  justifyContent: 'flex-end',
+                  gap: 8,
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={closeEditModal}
+                  className="btn secondary"
+                  style={{
+                    padding: '8px 12px',
+                    borderRadius: 999,
+                    border: '1px solid #d1d5db',
+                    background: '#ffffff',
+                    fontSize: 14,
+                    cursor: 'pointer',
+                  }}
+                >
+                  취소
+                </button>
+                <button
+                  type="submit"
+                  className="btn primary"
+                  disabled={savingEdit}
+                  style={{
+                    padding: '8px 14px',
+                    borderRadius: 999,
+                    border: 'none',
+                    background: '#2563eb',
+                    color: '#ffffff',
+                    fontSize: 14,
+                    cursor: savingEdit ? 'default' : 'pointer',
+                    opacity: savingEdit ? 0.7 : 1,
+                  }}
+                >
+                  {savingEdit ? '저장 중...' : '저장'}
+                </button>
+              </div>
+            </form>
           </div>
-        )}
-      </section>
+        </div>
+      )}
     </Layout>
   )
 }
 
-export { StudentDetail }
+export { StudentList }

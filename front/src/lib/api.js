@@ -1,7 +1,7 @@
 // 백엔드 기본 URL
 // - 개발/배포 환경 모두에서 VITE_API_BAS 를 우선 사용
 //   예) http://localhost:3000, https://dreamproject-ia6s.onrender.com
-// - 없으면 VITE_API_BASE → 마지막으로 '/api' 를 기본값으로 사용
+// - 없으면 VITE_API_BASE 를 쓰고, 그것도 없으면 '/api' 를 기본값으로 사용
 const RAW_BASE =
   import.meta.env.VITE_API_BAS ||
   import.meta.env.VITE_API_BASE ||
@@ -10,7 +10,7 @@ const RAW_BASE =
 // 끝에 붙은 슬래시는 제거 (ex: https://.../ -> https://...)
 const API_BASE = RAW_BASE.replace(/\/+$/, '')
 
-// 목 사용 여부
+// 모킹 사용 여부
 const USE_MOCK = String(import.meta.env.VITE_USE_MOCK || '0') === '1'
 
 function sleep(ms) {
@@ -18,7 +18,7 @@ function sleep(ms) {
 }
 
 async function mockResponse(path, options) {
-  // 아주 간단한 데모 목 (기존 내용 유지)
+  // 아주 간단한 데모 모킹 (기존 코드 유지)
   await sleep(120)
 
   if (path.startsWith('/students')) {
@@ -26,7 +26,7 @@ async function mockResponse(path, options) {
       return {
         items: [
           { id: '1', name: '홍길동', school: '꿈초등학교', grade: '3' },
-          { id: '2', name: '김영희', school: '꿈초등학교', grade: '2' },
+          { id: '2', name: '김미희', school: '꿈초등학교', grade: '2' },
         ],
       }
     }
@@ -40,8 +40,8 @@ async function mockResponse(path, options) {
       }
       return {
         id: m[1],
-        name: '데모 학생',
-        school: '데모학교',
+        name: '샘플 학생',
+        school: '샘플학교',
         grade: '4',
       }
     }
@@ -60,7 +60,7 @@ async function mockResponse(path, options) {
       }
     }
     if (/^\/uploads\/[^/]+\/text/.test(path)) {
-      return { text: '이곳에 OCR 결과 텍스트가 표시됩니다 (데모).' }
+      return { text: '여기에 OCR 결과 텍스트가 표시됩니다(모킹).' }
     }
     return [{ id: 'u1', file_name: 'report1.pdf', status: 'done' }]
   }
@@ -83,7 +83,7 @@ async function mockResponse(path, options) {
     }
   }
 
-  // Gemini 관련 목 응답
+  // Gemini 관련 모킹 응답
   if (path === '/ai/extract-records' && options && options.method === 'POST') {
     return {
       ok: true,
@@ -97,7 +97,7 @@ async function mockResponse(path, options) {
     return {
       ok: true,
       model: 'mock-gemini',
-      markdown: '# Mock 리포트\n\n(이것은 목업 응답입니다.)',
+      markdown: '# Mock 리포트\n\n(이것은 목업 응답입니다)',
     }
   }
 
@@ -122,24 +122,40 @@ async function apiFetch(path, options = {}) {
   const isForm =
     typeof FormData !== 'undefined' && options.body instanceof FormData
 
+  // If body is a plain object (and not FormData/Blob/etc), JSON-encode it
+  const isPlainObject =
+    options.body &&
+    typeof options.body === 'object' &&
+    !isForm &&
+    !(typeof Blob !== 'undefined' && options.body instanceof Blob) &&
+    !(typeof ArrayBuffer !== 'undefined' &&
+      options.body instanceof ArrayBuffer) &&
+    !(
+      typeof URLSearchParams !== 'undefined' &&
+      options.body instanceof URLSearchParams
+    )
+
   const fetchOpts = { ...options, headers }
   if (isForm) {
     // ensure we don't override headers
     delete fetchOpts.headers['Content-Type']
+  } else if (isPlainObject) {
+    // ★ 여기서 JS 객체 body를 JSON 문자열로 변환
+    fetchOpts.body = JSON.stringify(options.body)
+    if (!fetchOpts.headers['Content-Type']) {
+      fetchOpts.headers['Content-Type'] = 'application/json'
+    }
   }
 
-  // URL 조합: 
+  // URL 조합:
   // - p 가 절대 URL이면 그대로 사용
   // - 아니면 API_BASE 를 prefix 로 붙임
   let url
   if (/^https?:\/\//.test(p)) {
     url = p
   } else if (API_BASE) {
-    // API_BASE 가 'https://...' 이든 '/api' 이든 끝에 슬래시 제거되어 있고,
-    // p 는 항상 '/' 로 시작하므로 그냥 이어 붙이면 됨.
     url = API_BASE + p
   } else {
-    // 최후의 수단 (동일 오리진)
     url = p
   }
 
@@ -170,7 +186,7 @@ async function apiFetch(path, options = {}) {
 
 /**
  * PDF/TXT 원본 텍스트를 Gemini로 분석해서
- * prompts.js의 PDF_TXT_EXTRACTION_PROMPT 기준 JSON records를 받는 헬퍼
+ * prompts.js 의 PDF_TXT_EXTRACTION_PROMPT 기반 JSON records 를 받는 헬퍼
  *
  * payload: { raw_text: string, file_name?: string }
  */
@@ -183,8 +199,8 @@ export async function extractRecordsWithGemini(payload) {
 }
 
 /**
- * Dashboard/Report 에서 집계한 데이터를 기반으로
- * prompts.js의 REPORT_GENERATION_PROMPT 기준 Markdown 리포트 생성
+ * Dashboard/Report 에서 집계된 데이터를 기반으로
+ * prompts.js 의 GET_REPORT_PROMPT 기반 Markdown 리포트를 생성
  *
  * payload: {
  *   student_profile,

@@ -15,21 +15,7 @@ import Dashboard from './pages/Dashboard.jsx'
 import UploadPage from './pages/UploadPage.jsx'
 import Report from './pages/Report.jsx'
 import StudentList from './pages/StudentList.jsx'
-import StudentDetail from './pages/StudentDetail.jsx'
-import TextViewer from './pages/TextViewer.jsx'
 import RequireAuth from './components/RequireAuth.jsx'
-
-// /students/:id → StudentDetail에 studentId props로 넘기는 래퍼
-function StudentDetailWrapper() {
-  const { id } = useParams()
-  return <StudentDetail studentId={id} />
-}
-
-// /text/:uploadId → TextViewer에 uploadId props로 넘기는 래퍼
-function TextViewerWrapper() {
-  const { uploadId } = useParams()
-  return <TextViewer uploadId={uploadId} />
-}
 
 function AppRouter() {
   return (
@@ -68,22 +54,6 @@ function AppRouter() {
           element={
             <RequireAuth>
               <StudentList />
-            </RequireAuth>
-          }
-        />
-        <Route
-          path="/students/:id"
-          element={
-            <RequireAuth>
-              <StudentDetailWrapper />
-            </RequireAuth>
-          }
-        />
-        <Route
-          path="/text/:uploadId"
-          element={
-            <RequireAuth>
-              <TextViewerWrapper />
             </RequireAuth>
           }
         />

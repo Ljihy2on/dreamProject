@@ -83,11 +83,12 @@ export default function Dashboard() {
   // 대시보드 데이터
   const [metrics, setMetrics] = useState({
     recordCount: 0,
-    positivePercent: 0,
   })
   const [emotionData, setEmotionData] = useState([])
+  const [emotionDetails, setEmotionDetails] = useState([])
   const [activitySeries, setActivitySeries] = useState([])
   const [activityAbilityList, setActivityAbilityList] = useState([])
+  const [activityDetails, setActivityDetails] = useState([])
 
   // 공통 상태
   const [loading, setLoading] = useState(false)
@@ -107,11 +108,12 @@ export default function Dashboard() {
   // ---------- 파생 값들 ----------
 
   const recordCount = metrics?.recordCount ?? 0
-  const positivePercent = metrics?.positivePercent ?? 0
 
   const emotionChartData = asArray(emotionData)
+  const emotionDetailList = asArray(emotionDetails)
   const seriesData = asArray(activitySeries)
   const abilityList = asArray(activityAbilityList)
+  const activityDetailRows = asArray(activityDetails)
 
   const isInvalidRange = startDate && endDate && startDate > endDate
 
@@ -125,33 +127,77 @@ export default function Dashboard() {
     selectedStudent?.name ||
     (selectedStudentId ? '선택된 학생' : '해당')
 
+  const emotionDetailsByName = useMemo(() => {
+    const map = {}
+    emotionDetailList.forEach(d => {
+      if (d && d.emotion) {
+        map[d.emotion] = d
+      }
+    })
+    return map
+  }, [emotionDetailList])
+
   // 감정 점수(0~10) + Top5
+  // → 감정 분포(emotionDistribution)를 count 기준으로 정렬해서
+  //    해당 기간 동안 "가장 많이 느낀 감정 Top 5"를 보여준다.
   const emotionScaleItems = useMemo(() => {
     if (!emotionChartData.length) return []
-    return emotionChartData.slice(0, 5).map(item => {
-      const raw = typeof item.value === 'number' ? item.value : 0
-      const scoreFromPercent = raw > 10 ? raw / 10 : raw
-      const score10 = Math.max(
-        0,
-        Math.min(10, Math.round(scoreFromPercent * 10) / 10),
-      )
-      return { ...item, score10 }
+
+    // 서버에서 이미 count 기준으로 정렬되어 오지만,
+    // 혹시 모를 경우를 위해 한 번 더 정렬
+    const top = emotionChartData
+      .slice()
+      .sort((a, b) => (b.count || 0) - (a.count || 0))
+      .slice(0, 5)
+
+    // 가장 많이 느낀 감정을 10점, 나머지는 비율에 맞게 0~10으로 환산
+    const maxCount =
+      top.reduce((m, item) => Math.max(m, item.count || 0), 0) || 1
+
+    return top.map(item => {
+      const baseCount = item.count || 0
+      const detail = emotionDetailsByName[item.name]
+      const totalCount = detail?.totalCount ?? baseCount
+
+      // 해당 감정이 등장한 활동 이름 모으기
+      let topActivities = []
+      if (detail && Array.isArray(detail.items)) {
+        const actSet = new Set()
+        detail.items.forEach(it => {
+          if (Array.isArray(it.activities)) {
+            it.activities.forEach(a => {
+              if (a) actSet.add(a)
+            })
+          }
+        })
+        topActivities = Array.from(actSet).slice(0, 3)
+      }
+
+      const score10 =
+        Math.round(((baseCount / (maxCount || 1)) * 10) * 10) / 10 // 소수 1자리
+
+      return {
+        ...item,
+        score10,
+        totalCount,
+        topActivities,
+      }
     })
-  }, [emotionChartData])
+  }, [emotionChartData, emotionDetailsByName])
 
   // 감정 상세 모달용 데이터
+  // 서버에서 내려준 count(실제 횟수)를 그대로 사용해서
+  // "해당 기간 동안 이 감정을 몇 회 느꼈는지"를 보여준다.
   const emotionDetailRows = useMemo(() => {
     if (!emotionChartData.length) return []
-    const baseCount = recordCount || 100
 
     return emotionChartData.map(item => {
-      const ratio = item?.value ?? 0
-      const count = Math.round((ratio / 100) * baseCount)
-      let desc = ''
-      if (item.name?.includes('긍정')) desc = '기쁨, 만족, 뿌듯함, 즐거움 등'
-      else if (item.name?.includes('부정'))
-        desc = '걱정, 불안, 당황, 짜증 등'
-      else desc = '평온, 집중, 관찰 등'
+      const count = item?.count ?? 0
+      const ratio =
+        recordCount > 0 ? Math.round((count / recordCount) * 100) : 0
+
+      const desc =
+        '해당 감정이 자주 등장한 날짜와 관련 활동을 함께 확인할 수 있습니다.'
 
       return { type: item.name, ratio, count, desc }
     })
@@ -169,7 +215,7 @@ export default function Dashboard() {
         icon: icons[idx % icons.length],
         activity: act.activity,
         emotion: emo?.name ?? '감정',
-        score10: emo?.score10 ?? 0,
+        emotionCount: emo?.count ?? 0, // 👈 점수 대신 횟수
         description: act.date ? `${act.date} 활동` : '',
       }
     })
@@ -180,26 +226,60 @@ export default function Dashboard() {
     if (!emotionScaleItems.length) {
       return `${queriedStudentLabel} 학생의 감정 데이터가 아직 충분하지 않습니다.`
     }
-    const positiveItem = emotionScaleItems[0]
-    const pos = positiveItem?.score10 ?? positivePercent / 10
-    return `${queriedStudentLabel} 학생은 선택한 기간 동안 전반적으로 긍정적인 감정을 많이 경험했습니다. 특히 평균 감정 강도는 약 ${pos.toFixed(
-      1,
-    )}/10 수준으로, 안정적인 정서 상태가 유지되고 있습니다.`
-  }, [emotionScaleItems, positivePercent, queriedStudentLabel])
+    const top = emotionScaleItems[0]
+    const topCount = top?.count ?? 0
+    const topNames = emotionScaleItems.map(i => i.name).join(', ')
+    return `${queriedStudentLabel} 학생은 선택한 기간 동안 「${top.name}」 감정을 가장 자주 경험했습니다(대략 ${topCount}회 내외). 상위 5개 주요 감정은 ${topNames} 입니다.`
+  }, [emotionScaleItems, queriedStudentLabel])
 
   // 활동별 감정 요약 문장
   const activityEmotionSummaryText = useMemo(() => {
     if (!activityEmotionCards.length) {
       return `${queriedStudentLabel} 학생의 활동별 감정 데이터가 아직 충분하지 않습니다.`
     }
+
+    // emotionCount 기준으로 가장 자주 등장한 활동 선택
     const sorted = [...activityEmotionCards].sort(
-      (a, b) => b.score10 - a.score10,
+      (a, b) => (b.emotionCount || 0) - (a.emotionCount || 0),
     )
     const best = sorted[0]
-    return `${queriedStudentLabel} 학생은 특히 「${best.activity}」 활동에서 ${best.emotion} 감정을 가장 강하게 느꼈습니다(강도 약 ${best.score10.toFixed(
-      1,
-    )}/10). 수확·관리·관찰 등 다양한 활동에서 전반적으로 긍정적인 감정이 고르게 나타나고 있습니다.`
+    if (!best) {
+      return `${queriedStudentLabel} 학생의 활동별 감정 데이터가 아직 충분하지 않습니다.`
+    }
+
+    return `${queriedStudentLabel} 학생은 특히 「${best.activity}」 활동에서 「${best.emotion}」 감정을 자주 경험했습니다. 수확·관리·관찰 등 다양한 활동에서 이러한 감정들이 나타나고 있습니다.`
   }, [activityEmotionCards, queriedStudentLabel])
+
+  // 활동 상세 통계 (상세보기 모달 하단 카드용)
+  const activityStats = useMemo(() => {
+    if (!activityDetailRows.length) {
+      return { total: 0, mostActive: null, typeCount: 0 }
+    }
+    const total = activityDetailRows.length
+    const countByActivity = {}
+    const typeSet = new Set()
+
+    activityDetailRows.forEach(row => {
+      const a = row.activity || '활동'
+      countByActivity[a] = (countByActivity[a] || 0) + 1
+      if (row.category) typeSet.add(row.category)
+    })
+
+    const mostActive =
+      Object.entries(countByActivity).sort((a, b) => b[1] - a[1])[0][0]
+
+    return { total, mostActive, typeCount: typeSet.size }
+  }, [activityDetailRows])
+
+  const activityDetailSummaryText = useMemo(() => {
+    if (!activityDetailRows.length) {
+      return `${queriedStudentLabel} 학생의 활동 데이터가 아직 충분하지 않습니다.`
+    }
+    const { total, mostActive, typeCount } = activityStats
+    const activityLabel = mostActive || '활동'
+    const typeLabel = typeCount > 0 ? `${typeCount}가지` : '여러 가지'
+    return `${queriedStudentLabel} 학생은 선택한 기간 동안 총 ${total}회의 활동에 참여했습니다. 가장 자주 수행한 활동은 「${activityLabel}」이며, 총 ${typeLabel} 유형의 활동을 경험했습니다. 활동 기록을 통해 학생의 선호 활동과 강점을 더 잘 이해할 수 있습니다.`
+  }, [activityDetailRows, activityStats, queriedStudentLabel])
 
   // 활동별 요약 카드 (매우 우수/우수/도전)
   const excellentCount = abilityList.filter(
@@ -245,11 +325,14 @@ export default function Dashboard() {
 
       setMetrics({
         recordCount: res.metrics?.recordCount ?? 0,
-        positivePercent: res.metrics?.positivePercent ?? 0,
       })
       setEmotionData(asArray(res.emotionDistribution))
+      setEmotionDetails(asArray(res.emotionDetails))
       setActivitySeries(asArray(res.activitySeries))
-      setActivityAbilityList(normalizeActivityAbilityList(res.activityAbilityList))
+      setActivityAbilityList(
+        normalizeActivityAbilityList(res.activityAbilityList),
+      )
+      setActivityDetails(asArray(res.activityDetails))
 
       const qStudent =
         students.find(s => s.id === studentId) || selectedStudent || null
@@ -259,10 +342,12 @@ export default function Dashboard() {
     } catch (e) {
       console.error(e)
       setError(e.message || '대시보드 조회 중 오류가 발생했습니다.')
-      setMetrics({ recordCount: 0, positivePercent: 0 })
+      setMetrics({ recordCount: 0})
       setEmotionData([])
+      setEmotionDetails([])
       setActivitySeries([])
       setActivityAbilityList([])
+      setActivityDetails([])
     } finally {
       setLoading(false)
     }
@@ -466,12 +551,6 @@ export default function Dashboard() {
                         </div>
                         <div className="metric-label">기록 수</div>
                       </div>
-                      <div className="student-metric">
-                        <div className="metric-number metric-green">
-                          {positivePercent}%
-                        </div>
-                        <div className="metric-label">긍정 감정 비율</div>
-                      </div>
                     </div>
                   </div>
                 </div>
@@ -546,7 +625,7 @@ export default function Dashboard() {
                   <span>감정 척도</span>
                 </div>
                 <div className="emotion-scale-subtitle">
-                  선택 기간의 평균 감정 강도 (0~10)
+                  선택 기간 동안 자주 나타난 감정을 보여줍니다.
                 </div>
               </div>
               <button
@@ -560,8 +639,8 @@ export default function Dashboard() {
             </div>
 
             <div className="emotion-scale-section">
-              <div className="emotion-scale-section-title">
-                전체 평균 감정 Top 5
+                            <div className="emotion-scale-section-title">
+                가장 많이 느낀 감정 Top 5
               </div>
               {emotionScaleItems.length === 0 ? (
                 <div className="muted">
@@ -574,22 +653,23 @@ export default function Dashboard() {
                     <div key={item.name} className="emotion-scale-row">
                       <div className="emotion-scale-label">
                         <div className="emotion-name">{item.name}</div>
-                        <div className="emotion-scale-minmax">나쁨</div>
+                        <div className="emotion-count-text">
+                          총 {(item.count ?? 0)}회
+                        </div>
                       </div>
                       <div className="emotion-scale-bar-wrap">
                         <div className="emotion-score-info">
                           <span className="emotion-score-main">
-                            {item.score10.toFixed(1)}/10
+                            {recordCount > 0
+                              ? Math.round(
+                                  ((item.count ?? 0) / recordCount) * 100,
+                                )
+                              : 0}
+                            %
                           </span>
-                          <span className="emotion-score-state">좋음</span>
-                        </div>
-                        <div className="emotion-score-bar">
-                          <div
-                            className="emotion-score-bar-fill"
-                            style={{
-                              width: `${(item.score10 / 10) * 100}%`,
-                            }}
-                          />
+                          <span className="emotion-score-state">
+                            전체 대비 빈도
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -624,17 +704,11 @@ export default function Dashboard() {
                         <span className="activity-emotion-label">
                           {card.emotion}
                         </span>
-                        <span className="activity-emotion-score">
-                          {card.score10.toFixed(1)}/10
-                        </span>
-                      </div>
-                      <div className="activity-emotion-bar">
-                        <div
-                          className="activity-emotion-bar-fill"
-                          style={{
-                            width: `${(card.score10 / 10) * 100}%`,
-                          }}
-                        />
+                        {card.emotionCount != null && (
+                          <span className="activity-emotion-score">
+                            {card.emotionCount}회
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -657,6 +731,14 @@ export default function Dashboard() {
                   선택한 기간 동안 기록된 활동 시간을 날짜별로 살펴볼 수 있어요.
                 </div>
               </div>
+              <button
+                type="button"
+                className="btn secondary emotion-detail-btn"
+                onClick={() => setActivityModalOpen(true)}
+                disabled={!activityDetailRows.length}
+              >
+                상세보기
+              </button>
             </div>
 
             <div className="activity-chart-wrapper">
@@ -700,7 +782,7 @@ export default function Dashboard() {
                 <div className="col-activity">활동</div>
                 <div className="col-level">수행 수준</div>
                 <div className="col-distribution">능력 분포</div>
-                <div className="col-score">종합 점수</div>
+                <div className="col-score">활동 시간</div>
                 <div className="col-main-skills">주요 능력</div>
               </div>
 
@@ -757,9 +839,9 @@ export default function Dashboard() {
 
                     <div className="col-score">
                       <div className="score-main">
-                        {item.totalScore}점
+                        {item.hours || '-'}
                       </div>
-                      <div className="muted">{item.hours}</div>
+                      <div className="muted">기록된 시간/범위</div>
                     </div>
 
                     <div className="col-main-skills">
@@ -835,7 +917,8 @@ export default function Dashboard() {
               </div>
             </div>
 
-            <div className="emotion-detail-scroll">
+                        <div className="emotion-detail-scroll">
+              {/* 1) 전체 평균 감정 척도 카드 */}
               <section className="emotion-detail-section">
                 <h4 className="emotion-detail-section-title">
                   전체 평균 감정 척도
@@ -849,6 +932,7 @@ export default function Dashboard() {
                         r => r.type === item.name,
                       )
                       const count = row?.count ?? 0
+                      const ratio = row?.ratio ?? 0
                       return (
                         <div
                           key={item.name}
@@ -864,22 +948,11 @@ export default function Dashboard() {
                           </div>
                           <div className="emotion-detail-score-row">
                             <span className="emotion-detail-label">
-                              나쁨
+                              전체 대비
                             </span>
                             <span className="emotion-detail-score">
-                              {item.score10.toFixed(1)}/10
+                              {ratio}%
                             </span>
-                            <span className="emotion-detail-label">
-                              좋음
-                            </span>
-                          </div>
-                          <div className="emotion-detail-bar">
-                            <div
-                              className="emotion-detail-bar-fill"
-                              style={{
-                                width: `${(item.score10 / 10) * 100}%`,
-                              }}
-                            />
                           </div>
                           {row?.desc && (
                             <div className="emotion-detail-desc-text">
@@ -893,6 +966,57 @@ export default function Dashboard() {
                 )}
               </section>
 
+              {/* 2) 감정별 날짜/활동 내역 */}
+              <section className="emotion-detail-section">
+                <h4 className="emotion-detail-section-title">
+                  감정별 날짜/활동 내역
+                </h4>
+                {emotionDetailList.length === 0 ? (
+                  <div className="muted">
+                    감정별 날짜/활동 데이터가 아직 없습니다.
+                  </div>
+                ) : (
+                  <div className="emotion-timeline-grid">
+                    {emotionDetailList.map(detail => (
+                      <div
+                        key={detail.emotion}
+                        className="emotion-timeline-card"
+                      >
+                        <div className="emotion-timeline-header">
+                          <span className="emotion-detail-name">
+                            {detail.emotion}
+                          </span>
+                          <span className="emotion-detail-count-pill">
+                            총 {detail.totalCount}회
+                          </span>
+                        </div>
+                        <div className="emotion-timeline-list">
+                          {detail.items.map(item => (
+                            <div
+                              key={`${detail.emotion}-${item.date}`}
+                              className="emotion-timeline-row"
+                            >
+                              <div className="emotion-timeline-date">
+                                {item.date}
+                              </div>
+                              <div className="emotion-timeline-count">
+                                {item.count}회
+                              </div>
+                              <div className="emotion-timeline-activities">
+                                {item.activities && item.activities.length
+                                  ? item.activities.join(', ')
+                                  : '-'}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+
+              {/* 3) 전체 분석 요약 */}
               <section className="emotion-detail-section">
                 <h4 className="emotion-detail-section-title">
                   전체 분석 요약
@@ -902,6 +1026,7 @@ export default function Dashboard() {
                 </div>
               </section>
 
+              {/* 4) 활동별 감정 척도 */}
               <section className="emotion-detail-section">
                 <h4 className="emotion-detail-section-title">
                   활동별 감정 척도
@@ -936,17 +1061,11 @@ export default function Dashboard() {
                           <span className="activity-emotion-detail-label">
                             {card.emotion}
                           </span>
-                          <span className="activity-emotion-detail-score">
-                            {card.score10.toFixed(1)}/10
-                          </span>
-                        </div>
-                        <div className="activity-emotion-detail-bar">
-                          <div
-                            className="activity-emotion-detail-bar-fill"
-                            style={{
-                              width: `${(card.score10 / 10) * 100}%`,
-                            }}
-                          />
+                          {card.emotionCount != null && (
+                            <span className="activity-emotion-detail-score">
+                              {card.emotionCount}회
+                            </span>
+                          )}
                         </div>
                       </div>
                     ))}
@@ -954,6 +1073,7 @@ export default function Dashboard() {
                 )}
               </section>
 
+              {/* 5) 활동별 감정 분석 요약 */}
               <section className="emotion-detail-section">
                 <h4 className="emotion-detail-section-title">
                   활동별 감정 분석
@@ -988,68 +1108,110 @@ export default function Dashboard() {
               ✕
             </button>
 
-            <h3>활동 유형 분포 상세보기</h3>
-            <p className="muted">
-              {queriedStudentLabel} 학생의 활동 유형별 수행 수준과 대표 감정을
-              한눈에 볼 수 있는 화면입니다.
-            </p>
-
-            <div className="activity-detail-table">
-              <div className="activity-detail-table-head">
-                <div>활동</div>
-                <div>대표 감정</div>
-                <div>수행 수준</div>
-                <div>비고</div>
-              </div>
-
-              {activityEmotionCards.length === 0 ? (
-                <div className="activity-detail-empty">
-                  선택한 기간에 대한 활동 데이터가 충분하지 않습니다.
+            <div className="activity-detail-header">
+              <div>
+                <div className="activity-detail-title">
+                  📊 활동 유형 분포
                 </div>
-              ) : (
-                activityEmotionCards.map(card => {
-                  const source = abilityList.find(a => a.id === card.id)
-                  const levelType = source?.levelType || 'good'
-                  const levelLabel = source?.levelLabel || '보통'
-                  return (
-                    <div key={card.id} className="activity-detail-row">
-                      <div>{card.activity}</div>
-                      <div>
-                        <div>{card.emotion}</div>
-                        <div className="activity-emotion-detail-bar">
-                          <div
-                            className="activity-emotion-detail-bar-fill"
-                            style={{
-                              width: `${(card.score10 / 10) * 100}%`,
-                            }}
-                          />
-                        </div>
-                      </div>
-                      <div>
-                        <span
-                          className={
-                            'level-badge ' +
-                            (levelType === 'excellent'
-                              ? 'level-excellent'
-                              : levelType === 'challenge'
-                              ? 'level-challenge'
-                              : 'level-good')
-                          }
-                        >
-                          {levelLabel}
-                        </span>
-                      </div>
-                      <div className="muted">
-                        {source?.hours || source?.date || ''}
-                      </div>
-                    </div>
-                  )
-                })
-              )}
+                <div className="activity-detail-subtitle">
+                  <div className="muted">활동 상세 내역</div>
+                  <div className="activity-detail-student">
+                    {queriedStudentLabel}의 일자별 활동 기록
+                    {queriedStartDate && queriedEndDate
+                      ? ` (${queriedStartDate} ~ ${queriedEndDate})`
+                      : ''}
+                  </div>
+                </div>
+              </div>
             </div>
 
-            <div className="activity-analysis-box">
-              {activityEmotionSummaryText}
+            <div className="activity-detail-scroll">
+              <section className="activity-detail-section">
+                <div className="activity-detail-table">
+                  <div className="activity-detail-table-head">
+                    <div>날짜</div>
+                    <div>활동</div>
+                    <div>감정</div> 
+                    <div>유형</div>
+                    <div>활동 유형</div>
+                    <div>학생 코멘트</div>
+                  </div>
+
+                  {activityDetailRows.length === 0 ? (
+                    <div className="activity-detail-empty">
+                      선택한 기간에 대한 활동 데이터가 충분하지 않습니다.
+                    </div>
+                  ) : (
+                    activityDetailRows.map((row, idx) => (
+                      <div
+                        key={`${row.date}-${row.activity}-${idx}`}
+                        className="activity-detail-row"
+                      >
+                        <div>{row.date}</div>
+                        <div>{row.activity}</div>
+                        <div>
+                          {row.emotion && (
+                            <span className="emotion-chip">
+                              {row.emotion}
+                            </span>
+                          )}
+                        </div>
+                        <div>
+                          {row.category && (
+                            <span className="skill-chip">
+                              {row.category}
+                            </span>
+                          )}
+                        </div>
+                        <div>
+                          {row.activityType && (
+                            <span className="skill-chip">
+                              {row.activityType}
+                            </span>
+                          )}
+                        </div>
+                        <div className="activity-detail-comment">
+                          {row.comment || '-'}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </section>
+
+              <section className="activity-detail-section">
+                <div className="activity-detail-summary-grid">
+                  <div className="ability-summary-card summary-excellent">
+                    <div className="summary-title">총 활동 횟수</div>
+                    <div className="summary-main">
+                      {activityStats.total}
+                      <span className="summary-sub">회</span>
+                    </div>
+                  </div>
+                  <div className="ability-summary-card summary-good">
+                    <div className="summary-title">가장 많은 활동</div>
+                    <div className="summary-main">
+                      {activityStats.mostActive || '-'}
+                    </div>
+                  </div>
+                  <div className="ability-summary-card summary-challenge">
+                    <div className="summary-title">활동 유형 수</div>
+                    <div className="summary-main">
+                      {activityStats.typeCount}
+                      <span className="summary-sub">가지</span>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section className="activity-detail-section">
+                <h4 className="activity-detail-section-title">
+                  활동 분석 요약
+                </h4>
+                <div className="activity-analysis-box">
+                  {activityDetailSummaryText}
+                </div>
+              </section>
             </div>
           </div>
         </div>

@@ -62,115 +62,29 @@ import { apiFetch, extractRecordsWithGemini } from '../lib/api.js'
  */
 
 // -------------------- 업로드 목록 전역 캐시 --------------------
-// 페이지를 최초로 들어왔을 때만 서버에서 로딩하고,
-// 이후 라우팅으로 다시 들어올 때는 이 캐시를 그대로 사용합니다.
 let uploadsCache = null
 
 // -------------------- 헬퍼 / 상수 --------------------
 
 const STEP_DEFS = [
-  { key: 'upload', label: '파일 업로드' },
   { key: 'extract', label: '텍스트 추출' },
-  { key: 'ocr', label: 'OCR 분석' },
-  { key: 'sentiment', label: '감정 분석' },
+  { key: 'ai', label: 'AI 자동 분석' },
+  { key: 'save', label: '데이터베이스 저장' },
 ]
 
-// 감정 키워드 기본 세트(테이블이 비어 있을 때만 사용)
-const DEFAULT_EMOTION_KEYWORDS = [
-  '흐뭇한',
-  '힘든',
-  '혼란스러운',
-  '황홀한',
-  '감격스러운',
-  '희망에 찬',
-  '당당한',
-  '자신감 있는',
-  '사랑하는',
-  '공허한',
-  '허탈한',
-  '쓸쓸한',
-  '서글픈',
-  '억울한',
-  '무서운',
-  '좌절한',
-  '분한',
-  '후회한',
-  '두려운',
-  '서러운',
-  '걱정되는',
-  '긴장한',
-  '짜증나는',
-  '지루한',
-  '허전한',
-  '심심한',
-  '기분 좋은',
-  '행복한',
-  '설레는',
-  '신나는',
-  '즐거운',
-  '감사한',
-  '따뜻한',
-  '고마운',
-  '상쾌한',
-  '유쾌한',
-  '후련한',
-  '든든한',
-  '홀가분한',
-  '자유로운',
-  '여유로운',
-  '감탄한',
-  '훈훈한',
-  '몽롱한',
-  '쑥스러운',
-  '명랑한',
-  '들뜬',
-  '두근거리는',
-  '짜릿한',
-  '화나는',
-  '분노한',
-  '피곤한',
-  '졸린',
-  '불안한',
-  '당황스러운',
-  '놀란',
-  '기쁜',
-  '뿌듯한',
-  '안도된',
-  '만족스러운',
-  '감동받은',
-  '기대에 부푼',
-  '가벼운',
-  '활기찬',
-  '차분한',
-  '평온한',
-  '편안한',
-  '부끄러운',
-  '민망한',
-  '죄책감',
-  '미안한',
-  '초조한',
-  '답답한',
-  '우울한',
-  '무기력한',
-  '허무한',
-  '멍한',
-  '지친',
-  '귀찮은',
-  '게으른',
-  '재미있는',
-  '신기한',
-  '이색한',
-  '의욕적인',
-  '충만한',
-  '통쾌한',
-  '의로운',
-  '자랑스러운',
-  '용기있는',
-  '사랑받는',
-  '소중한',
-  '기특한',
-  '존경스러운',
-]
+// 단계별 진행률로 전체 진행률 계산
+function computeOverallFromSteps(steps, fallbackProgress) {
+  const keys = STEP_DEFS.map(s => s.key)
+  if (!keys.length) {
+    return typeof fallbackProgress === 'number' ? fallbackProgress : 0
+  }
+  let sum = 0
+  keys.forEach(k => {
+    const v = steps && typeof steps[k] === 'number' ? steps[k] : 0
+    sum += v
+  })
+  return Math.round(sum / keys.length)
+}
 
 // 업로드 목록 응답 포맷 정규화
 function normalizeUploads(data) {
@@ -197,13 +111,11 @@ function normalizeEmotionTags(rawValue) {
   return []
 }
 
-// 분석 필드 정규화 (log_entries / AI 결과 공용)
+// 분석 필드 정규화
 function normalizeAnalysis(raw) {
   const a = raw.analysis || {}
   const legacyEmotion =
-    raw.emotion_tag || // log_entries.emotion_tag
-    a.emotion ||
-    a.emotionSummary
+    raw.emotion_tag || a.emotion || a.emotionSummary
 
   const emotionTagsRaw =
     a.emotionTags ||
@@ -216,29 +128,16 @@ function normalizeAnalysis(raw) {
     students: a.students || raw.students || [],
     date: a.date || raw.date || raw.log_date || null,
     activityName:
-      a.activityName ||
-      raw.activityName ||
-      raw.activity_name ||
-      raw.title ||
-      '',
+      a.activityName || raw.activityName || raw.activity_name || raw.title || '',
     durationMinutes:
       a.durationMinutes ||
       raw.durationMinutes ||
       raw.duration_minutes ||
       null,
-    activityType:
-      a.activityType ||
-      raw.activityType ||
-      raw.activity_type ||
-      '',
+    activityType: a.activityType || raw.activityType || raw.activity_type || '',
     note: a.note || raw.note || '',
     level: a.level || raw.level || '',
-    ability:
-      a.ability ||
-      a.abilities ||
-      raw.ability ||
-      raw.abilities ||
-      [],
+    ability: a.ability || a.abilities || raw.ability || raw.abilities || [],
     score:
       typeof a.score === 'number'
         ? a.score
@@ -246,13 +145,9 @@ function normalizeAnalysis(raw) {
         ? raw.score
         : null,
     scoreExplanation:
-      a.scoreExplanation ||
-      raw.scoreExplanation ||
-      raw.score_explanation ||
-      '',
+      a.scoreExplanation || raw.scoreExplanation || raw.score_explanation || '',
     emotionSummary: a.emotionSummary || legacyEmotion || '',
-    emotionCause:
-      a.emotionCause || a.emotion_reason || raw.emotionCause || '',
+    emotionCause: a.emotionCause || a.emotion_reason || raw.emotionCause || '',
     observedBehaviors:
       a.observedBehaviors ||
       a.behavior ||
@@ -277,21 +172,13 @@ function hydrateUpload(raw) {
     raw.uuid ||
     String(raw.file_name || raw.filename || raw.name || Math.random())
 
-  const fileName =
-    raw.file_name || raw.filename || raw.name || '이름 없는 파일'
+  const fileName = raw.file_name || raw.filename || raw.name || '이름 없는 파일'
 
   const studentName =
-    raw.student_name ||
-    raw.student?.name ||
-    raw.meta?.student_name ||
-    '학생 미확인'
+    raw.student_name || raw.student?.name || raw.meta?.student_name || '학생 미확인'
 
   const uploadedAt =
-    raw.created_at ||
-    raw.uploaded_at ||
-    raw.uploadDate ||
-    raw.createdAt ||
-    null
+    raw.created_at || raw.uploaded_at || raw.uploadDate || raw.createdAt || null
 
   const status = raw.status || 'queued'
   const progress =
@@ -302,7 +189,8 @@ function hydrateUpload(raw) {
     const base = typeof progress === 'number' ? progress : 0
     steps = {
       upload: base,
-      extract: base,
+      // 업로드 카드가 생성되는 시점에는 텍스트 추출이 끝난 것으로 간주
+      extract: 100,
       ocr: base,
       sentiment: base,
     }
@@ -311,9 +199,7 @@ function hydrateUpload(raw) {
   const overall =
     typeof progress === 'number'
       ? progress
-      : Math.round(
-          (steps.upload + steps.extract + steps.ocr + steps.sentiment) / 4,
-        )
+      : Math.round((steps.upload + steps.extract + steps.ocr + steps.sentiment) / 4)
 
   const analysis = normalizeAnalysis(raw)
 
@@ -400,11 +286,7 @@ function buildActivityTypeState(rawTypes = null, rawDetails = null) {
       }
     }
 
-    if (
-      rawDetails &&
-      Object.prototype.hasOwnProperty.call(rawDetails, key) &&
-      !detail
-    ) {
+    if (rawDetails && Object.prototype.hasOwnProperty.call(rawDetails, key) && !detail) {
       detail = rawDetails[key] || ''
     }
 
@@ -484,6 +366,7 @@ export default function UploadPage() {
   const [uploads, setUploads] = useState(() => uploadsCache || [])
   const [loading, setLoading] = useState(() => !uploadsCache)
   const [dragOver, setDragOver] = useState(false)
+  const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
 
   const [detail, setDetail] = useState(() => createDetailState())
@@ -493,6 +376,11 @@ export default function UploadPage() {
   const [downloading, setDownloading] = useState(false)
   const [emotionKeywords, setEmotionKeywords] = useState([])
 
+  // Supabase 학생 목록 (드롭다운용)
+  const [studentsMaster, setStudentsMaster] = useState([])
+  const [studentPickerOpen, setStudentPickerOpen] = useState(false)
+  const [studentPickerValue, setStudentPickerValue] = useState('')
+
   // Gemini AI 관련 상태
   const [aiLoading, setAiLoading] = useState(false)
   const [aiError, setAiError] = useState('')
@@ -500,11 +388,33 @@ export default function UploadPage() {
   // 업로드 + 캐시 동시 갱신
   function updateUploads(updater) {
     setUploads(prev => {
-      const next =
-        typeof updater === 'function' ? updater(prev) : updater
+      const next = typeof updater === 'function' ? updater(prev) : updater
       uploadsCache = next
       return next
     })
+  }
+
+  // 개별 업로드의 단계(progress)를 업데이트하는 헬퍼
+  function updateUploadSteps(uploadId, stepUpdater) {
+    updateUploads(prev =>
+      prev.map(item => {
+        if (item.id !== uploadId) return item
+        const prevSteps = item.steps || {}
+        const nextSteps =
+          typeof stepUpdater === 'function'
+            ? stepUpdater(prevSteps)
+            : { ...prevSteps, ...stepUpdater }
+        const overall = computeOverallFromSteps(
+          nextSteps,
+          item.overall_progress,
+        )
+        return {
+          ...item,
+          steps: nextSteps,
+          overall_progress: overall,
+        }
+      }),
+    )
   }
 
   // 업로드 목록 로드
@@ -527,7 +437,6 @@ export default function UploadPage() {
   // 감정 키워드 세트 로드 (emotion_keywords)
   async function loadEmotionKeywords() {
     try {
-      // ✅ 기존: /rest/v1/emotion_keywords?select=*
       const data = await apiFetch('/rest/v1/tags?select=*')
 
       const rows = Array.isArray(data)
@@ -546,22 +455,29 @@ export default function UploadPage() {
       if (normalized.length > 0) {
         setEmotionKeywords(normalized)
       } else {
-        setEmotionKeywords(
-          DEFAULT_EMOTION_KEYWORDS.map((label, index) => ({
-            id: `local-${index}`,
-            label,
-          })),
-        )
+        setEmotionKeywords([])
       }
     } catch (e) {
       console.error(e)
-      // 에러 시에는 기본 키워드 세트 사용
-      setEmotionKeywords(
-        DEFAULT_EMOTION_KEYWORDS.map((label, index) => ({
-          id: `local-${index}`,
-          label,
-        })),
-      )
+      setEmotionKeywords([])
+    }
+  }
+
+  // Supabase 학생 목록 로드
+  async function loadStudentsMaster() {
+    try {
+      const data = await apiFetch('/api/students?limit=500')
+      const items = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : []
+      const mapped = items
+        .map(stu => ({
+          id: String(stu.id),
+          name: stu.name || stu.real_name || stu.nickname || '이름 없는 학생',
+        }))
+        .filter(s => s.id && s.name)
+      setStudentsMaster(mapped)
+    } catch (e) {
+      console.error('학생 목록 로드 오류:', e)
+      setStudentsMaster([])
     }
   }
 
@@ -573,43 +489,45 @@ export default function UploadPage() {
       setLoading(false)
     }
     loadEmotionKeywords()
+    loadStudentsMaster()
   }, [])
 
   // ---------- 파일 업로드 ----------
 
   async function handleFiles(files) {
+    // 파일 배열로 변환
     const list = Array.from(files || [])
     if (list.length === 0) return
 
-    for (const file of list) {
-      const tempId = `temp-${Date.now()}-${file.name}`
+    // 이미 업로드/변환이 진행 중이면 중복 실행 방지
+    if (uploading) return
 
-      const tempUpload = hydrateUpload({
-        id: tempId,
-        file_name: file.name,
-        status: 'processing',
-        progress: 30,
-      })
+    setError('')
+    setUploading(true)
 
-      updateUploads(prev => [tempUpload, ...prev])
+    try {
+      for (const file of list) {
+        const form = new FormData()
+        form.append('file', file)
 
-      const form = new FormData()
-      form.append('file', file)
-
-      try {
-        setLoading(true)
-        await apiFetch('/uploads', {
-          method: 'POST',
-          body: form,
-          _formName: file.name,
-        })
-        await fetchUploads()
-      } catch (e) {
-        console.error(e)
-        setError('파일 업로드 중 오류가 발생했습니다.')
-      } finally {
-        setLoading(false)
+        try {
+          setLoading(true)
+          await apiFetch('/uploads', {
+            method: 'POST',
+            body: form,
+            _formName: file.name,
+          })
+          // 업로드가 완료된 뒤에만 목록을 갱신해서 카드가 생성되도록
+          await fetchUploads()
+        } catch (e) {
+          console.error(e)
+          setError('파일 업로드 중 오류가 발생했습니다.')
+        } finally {
+          setLoading(false)
+        }
       }
+    } finally {
+      setUploading(false)
     }
   }
 
@@ -647,6 +565,8 @@ export default function UploadPage() {
   async function openDetail(upload) {
     setDetail(createDetailState({ open: true, loading: true }))
     setAiError('')
+    setStudentPickerOpen(false)
+    setStudentPickerValue('')
 
     try {
       const uploadRes = await apiFetch(`/uploads/${upload.id}`)
@@ -660,57 +580,31 @@ export default function UploadPage() {
         hydrated.analysis?.rawTextCleaned ||
         ''
 
-      const serverLogEntries =
-        uploadRes?.log_entries || uploadRes?.entries || []
+      const serverLogEntries = uploadRes?.log_entries || uploadRes?.entries || []
 
       const serverStudents =
-        (uploadRes &&
-          (uploadRes.students || uploadRes.student_list || [])) ||
+        (uploadRes && (uploadRes.students || uploadRes.student_list || [])) ||
         hydrated.analysis?.students ||
         []
 
       let students = []
 
-      const fromEntries = Array.isArray(serverLogEntries)
-        ? serverLogEntries
-        : []
+      const fromEntries = Array.isArray(serverLogEntries) ? serverLogEntries : []
       const entryStudents = fromEntries.map((entry, idx) => ({
-        id: String(
-          entry.student_id ||
-            entry.student?.id ||
-            `stu-entry-${idx + 1}`,
-        ),
-        name:
-          entry.student_name ||
-          entry.student?.name ||
-          `학생 ${idx + 1}`,
+        id: String(entry.student_id || entry.student?.id || `stu-entry-${idx + 1}`),
+        name: entry.student_name || entry.student?.name || `학생 ${idx + 1}`,
       }))
 
       const explicitStudents = Array.isArray(serverStudents)
         ? serverStudents.map((s, idx) => ({
-            id: String(
-              s.id ||
-                s.student_id ||
-                s.uuid ||
-                s.key ||
-                `stu-${idx + 1}`,
-            ),
-            name:
-              s.name ||
-              s.student_name ||
-              s.realName ||
-              s.label ||
-              `학생 ${idx + 1}`,
+            id: String(s.id || s.student_id || s.uuid || s.key || `stu-${idx + 1}`),
+            name: s.name || s.student_name || s.realName || s.label || `학생 ${idx + 1}`,
           }))
         : []
 
-      if (
-        entryStudents.length === 0 &&
-        explicitStudents.length === 0
-      ) {
+      if (entryStudents.length === 0 && explicitStudents.length === 0) {
         const fallbackName = hydrated.student_name || '학생'
-        const fallbackId =
-          hydrated.student_id || hydrated.student?.id || 'stu-1'
+        const fallbackId = hydrated.student_id || hydrated.student?.id || 'stu-1'
         students = [
           {
             id: String(fallbackId),
@@ -731,18 +625,12 @@ export default function UploadPage() {
 
       if (fromEntries.length > 0) {
         fromEntries.forEach(entry => {
-          const stuId = String(
-            entry.student_id ||
-              entry.student?.id ||
-              students[0]?.id,
-          )
+          const stuId = String(entry.student_id || entry.student?.id || students[0]?.id)
           if (!stuId) return
 
           const normalized = normalizeAnalysis(entry)
 
-          const activityTags = Array.isArray(entry.activity_tags)
-            ? entry.activity_tags
-            : []
+          const activityTags = Array.isArray(entry.activity_tags) ? entry.activity_tags : []
           const activityTypesFromTags = {}
           activityTags.forEach(tagLabel => {
             const key = Object.keys(ACTIVITY_TYPE_PRESETS).find(
@@ -773,8 +661,7 @@ export default function UploadPage() {
             analysis: { ...base },
             activityTypes: buildActivityTypeState(
               uploadRes?.activity_types || uploadRes?.activityTypes,
-              uploadRes?.activity_type_details ||
-                uploadRes?.activityTypeDetails,
+              uploadRes?.activity_type_details || uploadRes?.activityTypeDetails,
             ),
           }
         })
@@ -796,6 +683,13 @@ export default function UploadPage() {
           analysisByStudent,
         }),
       )
+      // 텍스트를 불러온 시점에서 "텍스트 추출" 단계 완료로 간주
+      if (initialText && initialText.trim()) {
+        updateUploadSteps(hydrated.id, prevSteps => ({
+          ...prevSteps,
+          extract: 100,
+        }))
+      }
     } catch (err) {
       console.error(err)
 
@@ -804,8 +698,7 @@ export default function UploadPage() {
         hydrated.raw_text || hydrated.analysis?.rawTextCleaned || ''
 
       const fallbackName = hydrated.student_name || '학생'
-      const fallbackId =
-        hydrated.student_id || hydrated.student?.id || 'stu-1'
+      const fallbackId = hydrated.student_id || hydrated.student?.id || 'stu-1'
 
       const students = [
         {
@@ -834,12 +727,20 @@ export default function UploadPage() {
           activeStudentId: String(fallbackId),
         }),
       )
+      if (initialText && initialText.trim()) {
+        updateUploadSteps(hydrated.id, prevSteps => ({
+          ...prevSteps,
+          extract: 100,
+        }))
+      }
     }
   }
 
   function closeDetail() {
     setDetail(createDetailState())
     setAiError('')
+    setStudentPickerOpen(false)
+    setStudentPickerValue('')
   }
 
   // ---------- 학생 탭 ----------
@@ -855,11 +756,28 @@ export default function UploadPage() {
     })
   }
 
+  // 학생 추가 버튼 클릭 시: Supabase 학생 목록이 있으면 드롭다운 노출, 없으면 기존 prompt fallback
   function handleAddStudent() {
+    if (studentsMaster && studentsMaster.length > 0) {
+      setStudentPickerOpen(prev => !prev)
+      return
+    }
+
     const name = window.prompt('추가할 학생 이름을 입력하세요.')
     if (!name || !name.trim()) return
 
+    const trimmed = name.trim()
+
     setDetail(prev => {
+      const exists = (prev.students || []).find(s => s.name === trimmed)
+      if (exists) {
+        return {
+          ...prev,
+          activeStudentId: exists.id,
+          saved: false,
+        }
+      }
+
       const id = `local-${Date.now()}`
       const map = prev.analysisByStudent || {}
 
@@ -878,12 +796,91 @@ export default function UploadPage() {
 
       return {
         ...prev,
-        students: [...(prev.students || []), { id, name: name.trim() }],
+        students: [...(prev.students || []), { id, name: trimmed }],
         analysisByStudent: {
           ...map,
           [id]: baseState,
         },
         activeStudentId: id,
+        saved: false,
+      }
+    })
+  }
+
+  // 드롭다운에서 선택한 Supabase 학생을 실제 탭으로 추가
+  function handleAddStudentFromPicker() {
+    if (!studentPickerValue) {
+      alert('학생을 선택해 주세요.')
+      return
+    }
+
+    const master = studentsMaster.find(
+      s => String(s.id) === String(studentPickerValue),
+    )
+    if (!master) return
+
+    setDetail(prev => {
+      const existing = (prev.students || []).find(
+        s => String(s.id) === String(master.id),
+      )
+
+      const map = prev.analysisByStudent || {}
+
+      let baseState = {
+        analysis: {},
+        activityTypes: buildActivityTypeState(),
+      }
+
+      if (prev.activeStudentId && map[prev.activeStudentId]) {
+        const from = map[prev.activeStudentId]
+        baseState = {
+          analysis: { ...(from.analysis || {}) },
+          activityTypes: { ...(from.activityTypes || {}) },
+        }
+      }
+
+      const nextStudents = existing
+        ? prev.students
+        : [...(prev.students || []), { id: String(master.id), name: master.name }]
+
+      const nextAnalysisByStudent = existing
+        ? map
+        : {
+            ...map,
+            [String(master.id)]: baseState,
+          }
+
+      return {
+        ...prev,
+        students: nextStudents,
+        analysisByStudent: nextAnalysisByStudent,
+        activeStudentId: String(master.id),
+        saved: false,
+      }
+    })
+
+    setStudentPickerOpen(false)
+    setStudentPickerValue('')
+  }
+
+  function handleRemoveStudent(studentId) {
+    setDetail(prev => {
+      const nextStudents = (prev.students || []).filter(
+        s => s.id !== studentId,
+      )
+      const nextAnalysisByStudent = { ...(prev.analysisByStudent || {}) }
+      delete nextAnalysisByStudent[studentId]
+
+      let nextActiveId = prev.activeStudentId
+      if (studentId === prev.activeStudentId) {
+        nextActiveId = nextStudents[0]?.id || null
+      }
+
+      return {
+        ...prev,
+        students: nextStudents,
+        analysisByStudent: nextAnalysisByStudent,
+        activeStudentId: nextActiveId,
         saved: false,
       }
     })
@@ -954,13 +951,11 @@ export default function UploadPage() {
 
     const exists = emotionKeywords.find(item => item.label === trimmed)
     if (exists) {
-      // 이미 존재하면 단순 토글만
       toggleEmotionTagInDetail(trimmed)
       return
     }
 
     try {
-      // ✅ 기존: /rest/v1/emotion_keywords
       const response = await apiFetch('/rest/v1/tags', {
         method: 'POST',
         headers: {
@@ -980,13 +975,11 @@ export default function UploadPage() {
       toggleEmotionTagInDetail(newItem.label)
     } catch (e) {
       console.error(e)
-      // 백엔드 저장 실패해도 프론트 로컬에는 추가해서 사용 가능하게
       const fallbackItem = { id: trimmed, label: trimmed }
       setEmotionKeywords(prev => [...prev, fallbackItem])
       toggleEmotionTagInDetail(trimmed)
     }
   }
-
 
   function toggleActivityTypeSelection(key) {
     updateActiveStudent(current => {
@@ -1048,8 +1041,7 @@ export default function UploadPage() {
 
       const url = URL.createObjectURL(blob)
       const baseName =
-        detail.upload.file_name?.replace(/\.[^.]+$/, '') ||
-        'extracted-text'
+        detail.upload.file_name?.replace(/\.[^.]+$/, '') || 'extracted-text'
       const a = document.createElement('a')
       a.href = url
       a.download = `${baseName}.txt`
@@ -1076,21 +1068,43 @@ export default function UploadPage() {
       let students = [...(prev.students || [])]
       const analysisByStudent = { ...(prev.analysisByStudent || {}) }
 
+      // Supabase 학생 목록(studentsMaster)과 이름 매칭 → 있으면 해당 id 사용
       function ensureStudentId(name) {
-        const trimmed = String(name || '').trim() || '학생'
-        const existing = students.find(s => s.name === trimmed)
-        if (existing) return existing.id
+        const trimmed = String(name || '').trim()
+        const displayName = trimmed || '학생'
+
+        // 1) Supabase 학생 이름과 매칭
+        let master = null
+        if (studentsMaster && studentsMaster.length > 0 && trimmed) {
+          master = studentsMaster.find(
+            s => (s.name || '').trim() === trimmed,
+          )
+        }
+
+        if (master) {
+          const masterId = String(master.id)
+          const byId = students.find(s => String(s.id) === masterId)
+          if (byId) return byId.id
+
+          const stuObj = { id: masterId, name: master.name || displayName }
+          students = [...students, stuObj]
+          return masterId
+        }
+
+        // 2) 현재 모달 안에서 이름이 같은 학생이 이미 있으면 재사용
+        const existingByName = students.find(s => s.name === displayName)
+        if (existingByName) return existingByName.id
+
+        // 3) 둘 다 없으면 로컬 가상 학생 생성
         const newId = `ai-${students.length + 1}-${Date.now()}`
-        const newStu = { id: newId, name: trimmed }
+        const newStu = { id: newId, name: displayName }
         students = [...students, newStu]
         return newId
       }
 
       records.forEach(rec => {
         const studentName =
-          rec.student_name ||
-          prev.upload.student_name ||
-          '학생'
+          rec.student_name || prev.upload.student_name || '학생'
 
         const stuId = ensureStudentId(studentName)
 
@@ -1099,9 +1113,7 @@ export default function UploadPage() {
           : null
 
         const emotionTags = Array.isArray(rec.emotions)
-          ? rec.emotions
-              .map(e => e && e.label)
-              .filter(Boolean)
+          ? rec.emotions.map(e => e && e.label).filter(Boolean)
           : []
 
         const abilityAnalysis = rec.ability_analysis || {}
@@ -1109,18 +1121,15 @@ export default function UploadPage() {
         let activityTypes = buildActivityTypeState()
         const actTypeText = rec.activity_type || ''
 
-        // 간단 매핑: activity_type 안에 "수확/파종/관찰/관리" 등의 단어가 포함되면 해당 칩 선택
-        Object.entries(ACTIVITY_TYPE_PRESETS).forEach(
-          ([key, cfg]) => {
-            if (actTypeText.includes(cfg.label)) {
-              activityTypes[key] = {
-                ...cfg,
-                selected: true,
-                detail: '',
-              }
+        Object.entries(ACTIVITY_TYPE_PRESETS).forEach(([key, cfg]) => {
+          if (actTypeText.includes(cfg.label)) {
+            activityTypes[key] = {
+              ...cfg,
+              selected: true,
+              detail: '',
             }
-          },
-        )
+          }
+        })
 
         const analysis = {
           date: rec.date || prev.upload.uploaded_at || null,
@@ -1154,9 +1163,7 @@ export default function UploadPage() {
       })
 
       const nextActiveId =
-        prev.activeStudentId ||
-        (students[0] && students[0].id) ||
-        null
+        prev.activeStudentId || (students[0] && students[0].id) || null
 
       return {
         ...prev,
@@ -1178,9 +1185,7 @@ export default function UploadPage() {
       ''
 
     if (!sourceText) {
-      alert(
-        '분석할 텍스트가 없습니다. 먼저 업로드 텍스트를 불러오거나 작성해 주세요.',
-      )
+      alert('분석할 텍스트가 없습니다. 먼저 업로드 텍스트를 불러오거나 작성해 주세요.')
       return
     }
 
@@ -1193,17 +1198,22 @@ export default function UploadPage() {
         file_name: detail.upload.file_name,
       })
 
-      const records =
-        res?.parsed?.records || res?.records || []
+      const records = res?.parsed?.records || res?.records || []
 
       if (!Array.isArray(records) || records.length === 0) {
-        alert(
-          'AI가 활동 기록을 찾지 못했습니다. 텍스트를 다시 확인해 주세요.',
-        )
+        alert('AI가 활동 기록을 찾지 못했습니다. 텍스트를 다시 확인해 주세요.')
         return
       }
 
       applyAiExtraction(records)
+
+      // AI 자동 분석 완료 → 두 번째 단계 100%
+      if (detail.upload) {
+        updateUploadSteps(detail.upload.id, prevSteps => ({
+          ...prevSteps,
+          ai: 100,
+        }))
+      }
     } catch (e) {
       console.error(e)
       setAiError('AI 분석 중 오류가 발생했습니다.')
@@ -1223,9 +1233,7 @@ export default function UploadPage() {
       loading: true,
     })
     try {
-      const data = await apiFetch(
-        `/activity_types?upload_id=${detail.upload.id}`,
-      )
+      const data = await apiFetch(`/activity_types?upload_id=${detail.upload.id}`)
       const records = Array.isArray(data?.items)
         ? data.items
         : Array.isArray(data)
@@ -1285,23 +1293,16 @@ export default function UploadPage() {
     const logEntries = (detail.students || []).map(stu => {
       const state = detail.analysisByStudent?.[stu.id] || {}
       const analysis = state.analysis || {}
-      const activityTypes =
-        state.activityTypes || buildActivityTypeState()
+      const activityTypes = state.activityTypes || buildActivityTypeState()
 
-      const selectedActivityLabels = Object.entries(
-        activityTypes,
-      )
+      const selectedActivityLabels = Object.entries(activityTypes)
         .filter(([, item]) => item.selected)
         .map(([, item]) => item.label || '')
         .filter(Boolean)
 
-      const emotionTags = serializeEmotionTags(
-        analysis.emotionTags,
-      )
+      const emotionTags = serializeEmotionTags(analysis.emotionTags)
 
-      const { hours, minutes } = splitDuration(
-        analysis.durationMinutes,
-      )
+      const { hours, minutes } = splitDuration(analysis.durationMinutes)
       const durationMinutes =
         typeof analysis.durationMinutes === 'number'
           ? analysis.durationMinutes
@@ -1319,13 +1320,8 @@ export default function UploadPage() {
         activity_type: analysis.activityType || '',
         note: analysis.note || '',
         level: analysis.level || '',
-        ability: Array.isArray(analysis.ability)
-          ? analysis.ability
-          : [],
-        score:
-          typeof analysis.score === 'number'
-            ? analysis.score
-            : null,
+        ability: Array.isArray(analysis.ability) ? analysis.ability : [],
+        score: typeof analysis.score === 'number' ? analysis.score : null,
         score_explanation: analysis.scoreExplanation || '',
       }
 
@@ -1369,7 +1365,6 @@ export default function UploadPage() {
           log_entries: logEntries,
         },
       }))
-
       updateUploads(prev =>
         prev.map(item => {
           if (item.id !== detail.upload.id) return item
@@ -1377,23 +1372,30 @@ export default function UploadPage() {
           return {
             ...item,
             raw_text: rawText,
-            student_name:
-              firstEntry?.student_name || item.student_name,
+            student_name: firstEntry?.student_name || item.student_name,
             analysis: {
               ...(item.analysis || {}),
               date: firstEntry?.log_date,
               emotionSummary: firstEntry?.emotion_tag,
               activityType:
-                firstEntry?.activity_tags?.[0] ||
-                item.analysis?.activityType,
+                firstEntry?.activity_tags?.[0] || item.analysis?.activityType,
+            },
+            // 3개 과정(텍스트 추출, AI 분석, DB 저장)이 모두 끝난 상태로 표시
+            status: 'success',
+            progress: 100,
+            overall_progress: 100,
+            steps: {
+              ...(item.steps || {}),
+              upload: 100,
+              extract: 100,
+              ocr: 100,
+              sentiment: 100,
             },
           }
         }),
       )
 
-      alert(
-        '데이터가 데이터베이스(log_entries) 구조에 맞게 저장되었습니다.',
-      )
+      alert('데이터가 데이터베이스(log_entries) 구조에 맞게 저장되었습니다.')
     } catch (e) {
       console.error(e)
       setDetail(prev => ({ ...prev, saving: false, saved: false }))
@@ -1410,9 +1412,7 @@ export default function UploadPage() {
       {/* 업로드 영역 */}
       <section className="upload-hero">
         <div
-          className={
-            dragOver ? 'uploader uploader-drag' : 'uploader'
-          }
+          className={dragOver ? 'uploader uploader-drag' : 'uploader'}
           onClick={() => fileRef.current?.click()}
           onDragOver={e => {
             e.preventDefault()
@@ -1424,25 +1424,53 @@ export default function UploadPage() {
           }}
           onDrop={handleDrop}
         >
-          <div
-            style={{
-              fontSize: 40,
-              marginTop: 12,
-              marginBottom: 12,
-            }}
-          >
-            📄
-          </div>
-          <div
-            style={{
-              fontSize: 18,
-              fontWeight: 600,
-              marginBottom: 4,
-            }}
-          >
-            PDF / TXT 파일을 선택하거나 드래그하세요
-          </div>
-          <div className="muted">최대 10MB</div>
+          {uploading ? (
+            <>
+              <div
+                style={{
+                  fontSize: 40,
+                  marginTop: 12,
+                  marginBottom: 12,
+                }}
+              >
+                ⏳
+              </div>
+              <div
+                style={{
+                  fontSize: 18,
+                  fontWeight: 600,
+                  marginBottom: 4,
+                }}
+              >
+                파일을 변환하는 중입니다...
+              </div>
+              <div className="muted">
+                텍스트를 추출하고 있어요. 잠시만 기다려 주세요.
+              </div>
+            </>
+          ) : (
+            <>
+              <div
+                style={{
+                  fontSize: 40,
+                  marginTop: 12,
+                  marginBottom: 12,
+                }}
+              >
+                📄
+              </div>
+              <div
+                style={{
+                  fontSize: 18,
+                  fontWeight: 600,
+                  marginBottom: 4,
+                }}
+              >
+                PDF / TXT 파일을 선택하거나 드래그하세요
+              </div>
+              <div className="muted">최대 10MB</div>
+            </>
+          )}
         </div>
 
         <input
@@ -1451,9 +1479,7 @@ export default function UploadPage() {
           accept=".pdf,.txt,application/pdf,text/plain"
           multiple
           style={{ display: 'none' }}
-          onChange={e =>
-            e.target.files && handleFiles(e.target.files)
-          }
+          onChange={e => e.target.files && handleFiles(e.target.files)}
         />
       </section>
 
@@ -1474,15 +1500,9 @@ export default function UploadPage() {
           </div>
         )}
 
-        <div
-          className="upload-list"
-          style={{ marginTop: 16 }}
-        >
+        <div className="upload-list" style={{ marginTop: 16 }}>
           {safeUploads.length === 0 && !loading && !error && (
-            <div
-              className="muted"
-              style={{ marginBottom: 10, fontSize: 13 }}
-            >
+            <div className="muted" style={{ marginBottom: 10, fontSize: 13 }}>
               아직 업로드된 파일이 없습니다.
             </div>
           )}
@@ -1493,8 +1513,7 @@ export default function UploadPage() {
               rawStatus === 'done' ||
               rawStatus === 'success' ||
               rawStatus === 'completed'
-            const isFailed =
-              rawStatus === 'failed' || rawStatus === 'error'
+            const isFailed = rawStatus === 'failed' || rawStatus === 'error'
             const isDemo = upload.demo
 
             const badgeClass = isFailed
@@ -1502,11 +1521,8 @@ export default function UploadPage() {
               : isDone
               ? 'badge badge-success'
               : 'badge badge-warning'
-            const statusLabel = isDone
-              ? '처리 완료'
-              : isFailed
-              ? '실패'
-              : '처리 중'
+            // 3개 과정이 모두 끝나면 '저장완료', 그렇지 않으면 '수정중'
+            const statusLabel = isFailed ? '실패' : isDone ? '저장완료' : '수정중'
 
             const shellClass = isFailed
               ? 'card-shell card-shell-md upload-card-shell card-shell-error'
@@ -1517,16 +1533,12 @@ export default function UploadPage() {
             const steps = upload.steps || {}
             const stepInfoList = STEP_DEFS.map(step => ({
               ...step,
-              value: steps[step.key] ?? upload.progress ?? 0,
+              value:
+                typeof steps[step.key] === 'number' ? steps[step.key] : 0,
             }))
             const allStepsDone =
-              stepInfoList.length > 0 &&
-              stepInfoList.every(
-                s => (s.value ?? 0) >= 100,
-              )
-            const firstIncompleteStep = stepInfoList.find(
-              s => (s.value ?? 0) < 100,
-            )
+              stepInfoList.length > 0 && stepInfoList.every(s => (s.value ?? 0) >= 100)
+            const firstIncompleteStep = stepInfoList.find(s => (s.value ?? 0) < 100)
             const displayStepLabel = allStepsDone
               ? '모든 단계 완료'
               : firstIncompleteStep
@@ -1536,9 +1548,7 @@ export default function UploadPage() {
             const representativeLog =
               upload.latest_log_entry ||
               upload.representative_log ||
-              (Array.isArray(upload.log_entries)
-                ? upload.log_entries[0]
-                : null)
+              (Array.isArray(upload.log_entries) ? upload.log_entries[0] : null)
 
             const activityDate =
               representativeLog?.log_date ||
@@ -1548,9 +1558,7 @@ export default function UploadPage() {
 
             const activityType =
               representativeLog?.activity_type ||
-              (Array.isArray(
-                representativeLog?.activity_tags,
-              ) &&
+              (Array.isArray(representativeLog?.activity_tags) &&
                 representativeLog.activity_tags[0]) ||
               upload.analysis?.activityType ||
               '-'
@@ -1561,76 +1569,49 @@ export default function UploadPage() {
               '감정 정보 없음'
 
             const summaryName =
-              representativeLog?.activity_name ||
-              upload.analysis?.activityName ||
-              '대표 활동 없음'
+              representativeLog?.activity_name || upload.analysis?.activityName || '대표 활동 없음'
 
             return (
               <div key={upload.id} className={shellClass}>
                 <div className="upload-card-shell-header">
                   <div>
-                    <p className="card-title-main">
-                      {upload.file_name}
-                    </p>
+                    <p className="card-title-main">{upload.file_name}</p>
                     <p className="card-subtitle">
-                      {upload.student_name} · 업로드{' '}
-                      {formatDate(upload.uploaded_at)}
+                      {upload.student_name} · 업로드 {formatDate(upload.uploaded_at)}
                       {activityDate && (
                         <>
                           <span className="meta-sep">·</span>
-                          <span>
-                            활동일 {formatDate(activityDate)}
-                          </span>
+                          <span>활동일 {formatDate(activityDate)}</span>
                         </>
                       )}
                     </p>
                   </div>
                   <div className="upload-card-shell-actions">
-                    <span className={badgeClass}>
-                      {statusLabel}
-                    </span>
-                    {isDone && (
-                      <button
-                        className="btn secondary"
-                        type="button"
-                        onClick={() => openDetail(upload)}
-                        title="상세보기"
-                      >
-                        상세보기
-                      </button>
-                    )}
+                    <span className={badgeClass}>{statusLabel}</span>
+                    <button
+                      className="btn secondary"
+                      type="button"
+                      onClick={() => openDetail(upload)}
+                      title="상세보기"
+                    >
+                      상세보기
+                    </button>
                   </div>
                 </div>
 
                 <div className="upload-card-summary-row">
                   <div className="upload-card-summary">
                     <p className="card-subtitle">대표 활동</p>
-                    <p className="card-title-main">
-                      {summaryName}
-                    </p>
+                    <p className="card-title-main">{summaryName}</p>
                     <p className="card-subtitle">
-                      {activityType || '활동 유형 없음'} ·{' '}
-                      {emotionSummary}
+                      {activityType || '활동 유형 없음'} · {emotionSummary}
                     </p>
                   </div>
                   <div className="upload-card-progress-col">
-                    <p className="card-subtitle">전체 진행률</p>
-                    <div className="progress overall-progress">
-                      <i
-                        style={{
-                          width: `${
-                            upload.overall_progress ?? 0
-                          }%`,
-                        }}
-                      />
+                    <div className="upload-card-progress-text">
+                      <h3 className="upload-card-progress-label">현재 단계</h3>
+                      <div className="upload-card-progress-status">{displayStepLabel}</div>
                     </div>
-                    <p className="card-title-main">
-                      {upload.overall_progress ?? 0}%
-                    </p>
-                    <p className="card-subtitle current-step-label">
-                      {displayStepLabel}
-                    </p>
-                    {/* 업로드 삭제 버튼 */}
                     <button
                       type="button"
                       className="btn ghost delete-upload-btn"
@@ -1646,55 +1627,38 @@ export default function UploadPage() {
                   <div>
                     <p className="card-subtitle">활동일</p>
                     <p className="card-title-main">
-                      {activityDate
-                        ? formatDate(activityDate)
-                        : '활동일 미정'}
+                      {activityDate ? formatDate(activityDate) : '활동일 미정'}
                     </p>
                   </div>
                   <div>
                     <p className="card-subtitle">학생</p>
-                    <p className="card-title-main">
-                      {upload.student_name}
-                    </p>
+                    <p className="card-title-main">{upload.student_name}</p>
                   </div>
                   <div>
-                    <p className="card-subtitle">
-                      활동 유형
-                    </p>
-                    <p className="card-title-main">
-                      {activityType || '-'}
-                    </p>
+                    <p className="card-subtitle">활동 유형</p>
+                    <p className="card-title-main">{activityType || '-'}</p>
                   </div>
                 </div>
 
-                {!isDemo &&
-                  !isDone &&
-                  stepInfoList.length > 0 && (
-                    <div className="upload-card-steps">
-                      {stepInfoList.map(step => (
-                        <div
-                          key={step.key}
-                          className="step-row"
-                        >
-                          <div className="step-label">
-                            {step.label}
+                {!isDemo && !isDone && stepInfoList.length > 0 && (
+                  <div className="upload-card-steps">
+                    {stepInfoList.map(step => (
+                      <div key={step.key} className="step-row">
+                        <div className="step-label">{step.label}</div>
+                        <div className="step-progress-wrap">
+                          <div className="progress step-progress">
+                            <i
+                              style={{
+                                width: `${step.value}%`,
+                              }}
+                            />
                           </div>
-                          <div className="step-progress-wrap">
-                            <div className="progress step-progress">
-                              <i
-                                style={{
-                                  width: `${step.value}%`,
-                                }}
-                              />
-                            </div>
-                            <span className="step-percent">
-                              {step.value}%
-                            </span>
-                          </div>
+                          <span className="step-percent">{step.value}%</span>
                         </div>
-                      ))}
-                    </div>
-                  )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )
           })}
@@ -1703,18 +1667,13 @@ export default function UploadPage() {
 
       {/* 상세보기 모달 */}
       {detail.open && detail.upload && (
-        <div
-          className="modal-backdrop"
-          role="dialog"
-          aria-modal="true"
-        >
+        <div className="modal-backdrop" role="dialog" aria-modal="true">
           <div className="modal-card modal-card-wide detail-analysis-modal">
             <div className="detail-analysis-header">
               <div>
                 <h3>상세 편집 및 AI 분석</h3>
                 <p className="card-subtitle detail-analysis-meta">
-                  {detail.upload.file_name} · 업로드{' '}
-                  {formatDate(detail.upload.uploaded_at)} · ID #
+                  {detail.upload.file_name} · 업로드 {formatDate(detail.upload.uploaded_at)} · ID #
                   {detail.upload.id}
                 </p>
               </div>
@@ -1733,34 +1692,22 @@ export default function UploadPage() {
                   onClick={handleDownloadOriginal}
                   disabled={downloading}
                 >
-                  {downloading
-                    ? '다운로드 중...'
-                    : '텍스트 다운로드'}
+                  {downloading ? '다운로드 중...' : '텍스트 다운로드'}
                 </button>
-                <button
-                  type="button"
-                  className="btn ghost"
-                  onClick={closeDetail}
-                >
+                <button type="button" className="btn ghost" onClick={closeDetail}>
                   닫기
                 </button>
               </div>
             </div>
 
             {detail.error && (
-              <div
-                className="error"
-                style={{ marginBottom: 8 }}
-              >
+              <div className="error" style={{ marginBottom: 8 }}>
                 {detail.error}
               </div>
             )}
 
             {aiError && (
-              <div
-                className="error"
-                style={{ marginBottom: 8 }}
-              >
+              <div className="error" style={{ marginBottom: 8 }}>
                 {aiError}
               </div>
             )}
@@ -1784,8 +1731,7 @@ export default function UploadPage() {
                 }}
               >
                 {(detail.students || []).map(stu => {
-                  const isActive =
-                    stu.id === detail.activeStudentId
+                  const isActive = stu.id === detail.activeStudentId
                   const baseClass = 'emotion-chip'
                   const activeClass = isActive
                     ? 'emotion-chip-selected'
@@ -1795,22 +1741,24 @@ export default function UploadPage() {
                       key={stu.id}
                       type="button"
                       className={`${baseClass} ${activeClass} student-tab`}
-                      onClick={() =>
-                        handleSelectStudent(stu.id)
-                      }
+                      onClick={() => handleSelectStudent(stu.id)}
                     >
-                      <span className="emotion-chip-label">
-                        {stu.name}
+                      <span className="emotion-chip-label">{stu.name}</span>
+                      <span
+                        className="emotion-chip-icon"
+                        style={{ marginLeft: 4 }}
+                        onClick={e => {
+                          e.stopPropagation()
+                          handleRemoveStudent(stu.id)
+                        }}
+                      >
+                        ×
                       </span>
                     </button>
                   )
                 })}
-                {(!detail.students ||
-                  detail.students.length === 0) && (
-                  <span
-                    className="muted"
-                    style={{ fontSize: 12 }}
-                  >
+                {(!detail.students || detail.students.length === 0) && (
+                  <span className="muted" style={{ fontSize: 12 }}>
                     아직 등록된 학생이 없습니다.
                   </span>
                 )}
@@ -1824,10 +1772,43 @@ export default function UploadPage() {
               </button>
             </div>
 
-            {detail.loading ? (
-              <div className="muted">
-                불러오는 중입니다...
+            {/* Supabase 학생 선택 드롭다운 (버튼 바로 아래 위치) */}
+            {studentPickerOpen && (
+              <div
+                className="student-picker-row"
+                style={{
+                  display: 'flex',
+                  justifyContent: 'flex-end',
+                  alignItems: 'center',
+                  gap: 8,
+                  marginBottom: 12,
+                }}
+              >
+                <select
+                  className="analysis-input"
+                  style={{ maxWidth: 260 }}
+                  value={studentPickerValue}
+                  onChange={e => setStudentPickerValue(e.target.value)}
+                >
+                  <option value="">학생 선택</option>
+                  {studentsMaster.map(stu => (
+                    <option key={stu.id} value={stu.id}>
+                      {stu.name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="btn secondary small"
+                  onClick={handleAddStudentFromPicker}
+                >
+                  추가
+                </button>
               </div>
+            )}
+
+            {detail.loading ? (
+              <div className="muted">불러오는 중입니다...</div>
             ) : (
               <>
                 <div className="detail-layout detail-layout-modern">
@@ -1835,12 +1816,12 @@ export default function UploadPage() {
                     <div className="detail-panel">
                       <div className="detail-panel-head">
                         <h4>원본 텍스트</h4>
-                        <p></p>
+                        <hr></hr>
                         <p className="card-subtitle">
                           AI 분석 결과를 바탕으로 정리된 텍스트입니다.
                         </p>
-                        <p></p>
                       </div>
+                      <br></br>
                       <textarea
                         className="detail-textarea"
                         value={detail.editedText}
@@ -1853,53 +1834,35 @@ export default function UploadPage() {
                         }
                         placeholder="원본 텍스트를 편집하여 저장할 수 있습니다."
                       />
-                      <p className="detail-helper-text">
-                      </p>
+                      <p className="detail-helper-text"></p>
                     </div>
                   </section>
 
                   <section className="detail-right">
                     {(() => {
-                      const {
-                        activeId,
-                        analysis: a,
-                        activityTypes,
-                      } = getActiveStudentState(detail)
+                      const { activeId, analysis: a, activityTypes } =
+                        getActiveStudentState(detail)
                       const activeStudent =
-                        (detail.students || []).find(
-                          s => s.id === activeId,
-                        ) || null
+                        (detail.students || []).find(s => s.id === activeId) || null
 
                       const studentsText =
-                        activeStudent?.name ||
-                        detail.upload.student_name
+                        activeStudent?.name || detail.upload.student_name
 
                       const dateValue = a.date
                         ? formatDate(a.date)
-                        : formatDate(
-                            detail.upload.uploaded_at,
-                          ) || ''
+                        : formatDate(detail.upload.uploaded_at) || ''
 
-                      const { hours, minutes } = splitDuration(
-                        a.durationMinutes,
-                      )
-                      const safeHours = Number.isNaN(hours)
-                        ? 0
-                        : hours
-                      const safeMinutes = Number.isNaN(minutes)
-                        ? 0
-                        : minutes
+                      const { hours, minutes } = splitDuration(a.durationMinutes)
+                      const safeHours = Number.isNaN(hours) ? 0 : hours
+                      const safeMinutes = Number.isNaN(minutes) ? 0 : minutes
 
                       return (
                         <div className="analysis-panel">
                           <div className="analysis-panel-header">
-                            <h4>
-                              AI 분석 결과 (학생별 편집)
-                            </h4>
+                            <h4>AI 분석 결과 (학생별 편집)</h4>
                             <p className="card-subtitle">
-                              현재 선택된 학생 탭에 대해 활동 정보와
-                              감정, 활동 유형을 개별적으로 수정할 수
-                              있습니다. 저장 시 log_entries로 변환됩니다.
+                              현재 선택된 학생 탭에 대해 활동 정보와 감정, 활동 유형을
+                              개별적으로 수정할 수 있습니다.
                             </p>
                           </div>
 
@@ -1918,9 +1881,7 @@ export default function UploadPage() {
                                   value={dateValue}
                                   onChange={e =>
                                     updateEditedAnalysis({
-                                      date:
-                                        e.target.value ||
-                                        null,
+                                      date: e.target.value || null,
                                     })
                                   }
                                 />
@@ -1931,8 +1892,7 @@ export default function UploadPage() {
                                   value={a.activityName || ''}
                                   onChange={e =>
                                     updateEditedAnalysis({
-                                      activityName:
-                                        e.target.value,
+                                      activityName: e.target.value,
                                     })
                                   }
                                 />
@@ -1944,26 +1904,16 @@ export default function UploadPage() {
                                     className="analysis-input time-input"
                                     value={safeHours}
                                     onChange={e => {
-                                      const h =
-                                        Math.max(
-                                          0,
-                                          Number(
-                                            e.target
-                                              .value || 0,
-                                          ),
-                                        )
-                                      updateEditedAnalysis(
-                                        {
-                                          durationMinutes:
-                                            h * 60 +
-                                            safeMinutes,
-                                        },
+                                      const h = Math.max(
+                                        0,
+                                        Number(e.target.value || 0),
                                       )
+                                      updateEditedAnalysis({
+                                        durationMinutes: h * 60 + safeMinutes,
+                                      })
                                     }}
                                   />
-                                  <span className="time-separator">
-                                    시간
-                                  </span>
+                                  <span className="time-separator">시간</span>
                                   <input
                                     type="number"
                                     min="0"
@@ -1973,24 +1923,15 @@ export default function UploadPage() {
                                     onChange={e => {
                                       let m = Math.max(
                                         0,
-                                        Number(
-                                          e.target
-                                            .value || 0,
-                                        ),
+                                        Number(e.target.value || 0),
                                       )
                                       if (m > 59) m = 59
-                                      updateEditedAnalysis(
-                                        {
-                                          durationMinutes:
-                                            safeHours *
-                                              60 + m,
-                                        },
-                                      )
+                                      updateEditedAnalysis({
+                                        durationMinutes: safeHours * 60 + m,
+                                      })
                                     }}
                                   />
-                                  <span className="time-separator">
-                                    분
-                                  </span>
+                                  <span className="time-separator">분</span>
                                 </div>
                                 <label>활동 유형</label>
                                 <input
@@ -1999,8 +1940,7 @@ export default function UploadPage() {
                                   value={a.activityType || ''}
                                   onChange={e =>
                                     updateEditedAnalysis({
-                                      activityType:
-                                        e.target.value,
+                                      activityType: e.target.value,
                                     })
                                   }
                                 />
@@ -2023,25 +1963,17 @@ export default function UploadPage() {
                                 <div>
                                   <h5>감정 키워드</h5>
                                   <p className="section-helper">
-                                    현재 학생에 해당하는 감정 키워드를
-                                    선택하거나 직접 추가할 수 있습니다.
-                                    저장 시 emotion_tags로 전달되어
-                                    분석/리포트에 활용됩니다.
+                                    현재 학생에 해당하는 감정 키워드를 선택하거나 직접
+                                    추가할 수 있습니다. 저장 시 분석/리포트에 활용됩니다.
                                   </p>
                                 </div>
                               </div>
                               <EmotionKeywordSelector
                                 masterList={emotionKeywords}
                                 selected={a.emotionTags || []}
-                                onToggle={label =>
-                                  toggleEmotionTagInDetail(
-                                    label,
-                                  )
-                                }
+                                onToggle={label => toggleEmotionTagInDetail(label)}
                                 onAddNew={label =>
-                                  addEmotionKeywordInSupabase(
-                                    label,
-                                  )
+                                  addEmotionKeywordInSupabase(label)
                                 }
                               />
                             </div>
@@ -2049,78 +1981,57 @@ export default function UploadPage() {
                             <div className="analysis-section">
                               <div className="analysis-section-head">
                                 <div>
-                                  <h5>
-                                    활동 유형 선택 (중복 선택
-                                    가능)
-                                  </h5>
+                                  <h5>활동 유형 선택 (중복 선택 가능)</h5>
                                   <p className="section-helper">
-                                    체크된 활동 유형은 현재 학생의 활동
-                                    기록 통계와 log_entries.activity_tags
-                                    에 반영됩니다.
+                                    체크된 활동 유형은 현재 학생의 활동 기록 통계에
+                                    반영됩니다.
                                   </p>
                                 </div>
-                                <button
-                                  type="button"
-                                  className="btn ghost small"
-                                  onClick={
-                                    openActivityTypeSummary
-                                  }
-                                >
-                                  활동 유형 집계 보기
-                                </button>
                               </div>
                               <div className="activity-type-grid">
-                                {Object.entries(
-                                  activityTypes || {},
-                                ).map(([key, item]) => (
-                                  <div
-                                    key={key}
-                                    className={
-                                      item.selected
-                                        ? 'activity-type-card selected'
-                                        : 'activity-type-card'
-                                    }
-                                  >
-                                    <button
-                                      type="button"
-                                      className="activity-type-toggle"
-                                      onClick={() =>
-                                        toggleActivityTypeSelection(
-                                          key,
-                                        )
+                                {Object.entries(activityTypes || {}).map(
+                                  ([key, item]) => (
+                                    <div
+                                      key={key}
+                                      className={
+                                        item.selected
+                                          ? 'activity-type-card selected'
+                                          : 'activity-type-card'
                                       }
                                     >
-                                      <span className="activity-type-icon">
-                                        {item.icon || '•'}
-                                      </span>
-                                      <span className="activity-type-label">
-                                        {item.label}
-                                      </span>
-                                      <span className="activity-type-check">
-                                        {item.selected
-                                          ? '✓'
-                                          : ''}
-                                      </span>
-                                    </button>
-                                    {item.selected && (
-                                      <textarea
-                                        className="activity-type-detail"
-                                        value={
-                                          item.detail || ''
+                                      <button
+                                        type="button"
+                                        className="activity-type-toggle"
+                                        onClick={() =>
+                                          toggleActivityTypeSelection(key)
                                         }
-                                        placeholder={
-                                          item.placeholder
-                                        }
-                                        onChange={e =>
-                                          updateActivityTypeDetail(
-                                            key,
-                                            e.target.value,
-                                          )
-                                        }
-                                      />
-                                    )}
-                                  </div>
-                                ))}
+                                      >
+                                        <span className="activity-type-icon">
+                                          {item.icon || '•'}
+                                        </span>
+                                        <span className="activity-type-label">
+                                          {item.label}
+                                        </span>
+                                        <span className="activity-type-check">
+                                          {item.selected ? '✓' : ''}
+                                        </span>
+                                      </button>
+                                      {item.selected && (
+                                        <textarea
+                                          className="activity-type-detail"
+                                          value={item.detail || ''}
+                                          placeholder={item.placeholder}
+                                          onChange={e =>
+                                            updateActivityTypeDetail(
+                                              key,
+                                              e.target.value,
+                                            )
+                                          }
+                                        />
+                                      )}
+                                    </div>
+                                  ),
+                                )}
                               </div>
                             </div>
                           </div>
@@ -2136,14 +2047,10 @@ export default function UploadPage() {
                     onClick={handleSaveLogEntry}
                     disabled={detail.saving}
                   >
-                    {detail.saving
-                      ? '저장 중...'
-                      : '데이터베이스 저장'}
+                    {detail.saving ? '저장 중...' : '데이터베이스 저장'}
                   </button>
                   {detail.saved && (
-                    <span className="badge badge-success">
-                      저장 완료
-                    </span>
+                    <span className="badge badge-success">저장 완료</span>
                   )}
                 </div>
               </>
@@ -2163,11 +2070,7 @@ export default function UploadPage() {
 
 // -------------------- 활동 유형 상세 모달 --------------------
 
-function ActivityTypeDetailModal({
-  modal,
-  onClose,
-  studentName,
-}) {
+function ActivityTypeDetailModal({ modal, onClose, studentName }) {
   if (!modal.open) return null
 
   const records = modal.records || []
@@ -2185,11 +2088,7 @@ function ActivityTypeDetailModal({
     0
 
   return (
-    <div
-      className="modal-backdrop"
-      role="dialog"
-      aria-modal="true"
-    >
+    <div className="modal-backdrop" role="dialog" aria-modal="true">
       <div className="modal-card modal-card-wide activity-detail-modal">
         <div className="detail-analysis-header">
           <div>
@@ -2199,20 +2098,14 @@ function ActivityTypeDetailModal({
             </p>
           </div>
           <div className="detail-header-actions">
-            <button
-              type="button"
-              className="btn ghost"
-              onClick={onClose}
-            >
+            <button type="button" className="btn ghost" onClick={onClose}>
               닫기
             </button>
           </div>
         </div>
 
         {modal.loading ? (
-          <div className="muted">
-            상세 데이터를 불러오는 중입니다...
-          </div>
+          <div className="muted">상세 데이터를 불러오는 중입니다...</div>
         ) : modal.error ? (
           <div className="error">{modal.error}</div>
         ) : (
@@ -2234,20 +2127,14 @@ function ActivityTypeDetailModal({
                     key={item.id || item.log_id}
                     className="activity-detail-row"
                   >
-                    <span>
-                      {formatDate(item.log_date) || '-'}
-                    </span>
-                    <span>
-                      {item.activity_name || '-'}
-                    </span>
+                    <span>{formatDate(item.log_date) || '-'}</span>
+                    <span>{item.activity_name || '-'}</span>
                     <span>
                       <span className="activity-type-chip">
                         {item.activity_type || '미분류'}
                       </span>
                     </span>
-                    <span>
-                      {item.note || item.memo || '-'}
-                    </span>
+                    <span>{item.note || item.memo || '-'}</span>
                   </div>
                 ))
               )}
@@ -2256,23 +2143,15 @@ function ActivityTypeDetailModal({
             <div className="activity-summary-grid">
               <div className="activity-summary-card">
                 <p className="card-subtitle">총 활동 횟수</p>
-                <p className="card-title-main">
-                  {totalActivities}
-                </p>
+                <p className="card-title-main">{totalActivities}</p>
               </div>
               <div className="activity-summary-card">
                 <p className="card-subtitle">가장 많은 활동</p>
-                <p className="card-title-main">
-                  {topActivity}
-                </p>
+                <p className="card-title-main">{topActivity}</p>
               </div>
               <div className="activity-summary-card">
-                <p className="card-subtitle">
-                  활동 유형 수
-                </p>
-                <p className="card-title-main">
-                  {activityTypeCount}
-                </p>
+                <p className="card-subtitle">활동 유형 수</p>
+                <p className="card-title-main">{activityTypeCount}</p>
               </div>
             </div>
 
@@ -2296,12 +2175,7 @@ function ActivityTypeDetailModal({
 
 // -------------------- 감정 키워드 선택 컴포넌트 --------------------
 
-function EmotionKeywordSelector({
-  masterList,
-  selected,
-  onToggle,
-  onAddNew,
-}) {
+function EmotionKeywordSelector({ masterList, selected, onToggle, onAddNew }) {
   const [inputValue, setInputValue] = React.useState('')
   const safeSelected = Array.isArray(selected) ? selected : []
   const safeMaster = Array.isArray(masterList) ? masterList : []
@@ -2343,18 +2217,13 @@ function EmotionKeywordSelector({
             className="emotion-chip emotion-chip-selected"
             onClick={() => onToggle && onToggle(label)}
           >
-            <span className="emotion-chip-label">
-              {label}
-            </span>
+            <span className="emotion-chip-label">{label}</span>
             <span className="emotion-chip-icon">✓</span>
           </button>
         ))}
       </div>
 
-      <form
-        className="emotion-chip-add-row"
-        onSubmit={handleSubmit}
-      >
+      <form className="emotion-chip-add-row" onSubmit={handleSubmit}>
         <input
           type="text"
           className="analysis-input emotion-chip-input"
@@ -2362,19 +2231,13 @@ function EmotionKeywordSelector({
           value={inputValue}
           onChange={e => setInputValue(e.target.value)}
         />
-        <button
-          type="submit"
-          className="btn ghost small"
-        >
+        <button type="submit" className="btn ghost small">
           + 추가
         </button>
       </form>
 
       {suggestions.length > 0 && (
-        <div
-          className="emotion-chips-row"
-          style={{ marginTop: 6 }}
-        >
+        <div className="emotion-chips-row" style={{ marginTop: 6 }}>
           {suggestions.map(item => {
             const label = (item.label || item.name || '').trim()
             if (!label) return null
@@ -2385,9 +2248,7 @@ function EmotionKeywordSelector({
                 className="emotion-chip emotion-chip-unselected"
                 onClick={() => onToggle && onToggle(label)}
               >
-                <span className="emotion-chip-label">
-                  {label}
-                </span>
+                <span className="emotion-chip-label">{label}</span>
                 <span className="emotion-chip-icon">+</span>
               </button>
             )

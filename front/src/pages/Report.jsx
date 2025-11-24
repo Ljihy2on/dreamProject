@@ -1,330 +1,227 @@
 // src/pages/Report.jsx
-import React, { useEffect, useState, useMemo } from 'react'
+import React, { useEffect, useState } from 'react'
 import Layout from '../components/Layout.jsx'
 import { apiFetch, generateReportWithGemini } from '../lib/api.js'
 
-// 🔹 리포트 카테고리 메타 정보 (Gemini에 함께 전달)
+// 백엔드 베이스 URL
+const API_BASE =
+  import.meta.env.VITE_API_BASE_URL ||
+  import.meta.env.VITE_API_BASE ||
+  'http://localhost:3000'
+
+// 로그인한 사용자 정보를 localStorage에서 가져오는 유틸
+function getCurrentUser() {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw =
+      window.localStorage.getItem('auth') ||
+      window.localStorage.getItem('user') ||
+      window.localStorage.getItem('dreamgarden_auth')
+
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    return parsed.user || parsed
+  } catch {
+    return null
+  }
+}
+
+// 🔹 리포트 카테고리 메타 정보
 const REPORT_CATEGORY_CONFIG = {
   all: {
     code: 'all',
     label: '전체',
-    description:
-      '기간 동안의 전반적인 활동, 감정, 능력 변화를 종합적으로 요약합니다.',
+    description: '기간 동안의 전반적인 활동, 감정, 능력 변화를 종합적으로 요약합니다.',
   },
   full: {
     code: 'full',
     label: '전체 리포트',
-    description:
-      '감정, 활동, 능력 변화를 모두 포함하는 전체 종합 리포트를 생성합니다.',
+    description: '감정, 활동, 능력 변화를 모두 포함하는 전체 종합 리포트입니다.',
   },
   emotion: {
     code: 'emotion',
     label: '감정 변화',
-    description:
-      '기간 동안의 감정 분포와 변화 양상을 중심으로 리포트를 생성합니다.',
+    description: '기간 동안의 감정 분포와 변화 양상을 중심으로 리포트를 생성합니다.',
   },
   activity_ratio: {
     code: 'activity_ratio',
     label: '활동 비율 변화',
-    description:
-      '어떤 활동을 얼마나 했는지, 활동 유형의 비율 변화를 중심으로 리포트를 생성합니다.',
+    description: '어떤 활동을 얼마나 했는지, 활동 유형의 비율 변화를 중심으로 리포트를 생성합니다.',
   },
   ability_growth: {
     code: 'ability_growth',
     label: '능력 성장 곡선',
-    description:
-      '활동 기록에 나타난 학생의 능력 변화와 성장 포인트를 중심으로 리포트를 생성합니다.',
+    description: '학생의 활동 수행 능력이 시간에 따라 어떻게 변화했는지를 중심으로 리포트를 생성합니다.',
   },
 }
 
-// 프론트 단에서 env 그대로 다시 읽어옴 (api.js 안과 동일한 규칙)
-const API_BASE = import.meta.env.VITE_API_BASE || '/api'
-const USE_MOCK = String(import.meta.env.VITE_USE_MOCK || '0') === '1'
+// 🔹 남은 시간 계산
+function getRemainingInfo(report, nowTs) {
+  if (!report.expiresAt) {
+    return { expired: false, label: '만료 기간 정보 없음' }
+  }
+  const expiresAtTs = new Date(report.expiresAt).getTime()
+  const diffMs = expiresAtTs - nowTs
+  if (diffMs <= 0) return { expired: true, label: '만료됨' }
 
-/**
- * 리포트 센터
- * - report_runs + report_outputs 기반으로
- *   "생성된 리포트(PDF)" 목록을 보여주고,
- *   필터/다운로드/삭제를 지원한다.
- */
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+  const diffHours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60))
+
+  if (diffDays > 0) return { expired: false, label: `${diffDays}일 남음` }
+  if (diffHours > 0) return { expired: false, label: `${diffHours}시간 남음` }
+  return { expired: false, label: '곧 만료' }
+}
+
+// 🔹 백엔드에서 내려온 report-runs 데이터를 화면용으로 정규화
+function normalizeReportRuns(rawRuns) {
+  if (!Array.isArray(rawRuns)) return []
+
+  return rawRuns.map(run => {
+    const params = run.params || run.filters || {}
+    const template = run.template || {}
+    const outputs = Array.isArray(run.outputs) ? run.outputs : []
+
+    const studentName =
+      run.student_name ||
+      params.student_name ||
+      (run.student && run.student.name) ||
+      '학생 이름 미상'
+
+    const categoryCode = params.category_code || template.category_code
+    const categoryLabel =
+      params.category_label ||
+      template.category_label ||
+      REPORT_CATEGORY_CONFIG[categoryCode]?.label ||
+      '리포트'
+
+    const purposeCode = params.purpose || template.purpose || run.purpose || 'other'
+    const purposeLabel =
+      purposeCode === 'parent'
+        ? '학부모 상담용'
+        : purposeCode === 'school'
+        ? '학교 제출용'
+        : null
+
+    const createdAt = run.created_at
+    const expiresAt =
+      run.expires_at ??
+      (createdAt
+        ? new Date(new Date(createdAt).getTime() + 7 * 24 * 60 * 60 * 1000).toISOString()
+        : null)
+
+    const firstMd =
+      outputs.find(o => o.format === 'md' || o.format === 'markdown') || run.md_output
+
+    const analysisFrom = params.from || params.date_from || params.start_date || null
+    const analysisTo = params.to || params.date_to || params.end_date || null
+
+    return {
+      id: run.id,
+      templateCode: template.code || params.template_code || 'custom',
+      templateName: template.name || categoryLabel,
+      studentName,
+      summary: run.summary || params.summary || '',
+      createdAt,
+      expiresAt,
+      status: run.status || 'completed',
+      // 백엔드의 다운로드 경로 (params.markdown이 있으면 거기서 다운로드됨)
+      mdDownloadPath:
+        firstMd?.download_path ||
+        (run.id ? `/report-runs/${run.id}/download?format=md` : null),
+      raw: run, // 원본 데이터 보존 (params 접근용)
+      purposeLabel,
+      analysisFrom,
+      analysisTo,
+    }
+  })
+}
+
 export default function Report() {
-  const [filterMode, setFilterMode] = useState('range') // 'range' | 'single'
+  const [currentUser] = useState(() => getCurrentUser())
+
+  // 필터/생성용 상태
+  const [filterMode, setFilterMode] = useState('range')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [singleDate, setSingleDate] = useState('')
   const [category, setCategory] = useState('all')
   const [studentId, setStudentId] = useState('all')
-  const [purpose, setPurpose] = useState('all') // 학부모 상담용 / 학교 제출용 등
+  const [purpose, setPurpose] = useState('all')
 
   const [reports, setReports] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
-  const [nowTs, setNowTs] = useState(Date.now()) // 남은 시간 계산용 시각
+  const [students, setStudents] = useState([])
+  const [studentsLoading, setStudentsLoading] = useState(false)
+  const [studentsError, setStudentsError] = useState(null)
 
-  // AI 리포트 생성 관련 상태
   const [generating, setGenerating] = useState(false)
   const [generateError, setGenerateError] = useState(null)
 
-  // 🔹 시작일 > 종료일인 경우 검증
+  const [nowTs, setNowTs] = useState(Date.now())
+
   const isInvalidRange =
     filterMode === 'range' && startDate && endDate && startDate > endDate
 
-  // 데모용 더미 데이터 (백엔드가 아직 없어도 UI 확인 가능)
-  const demoReports = [
-    {
-      id: 'demo-1',
-      templateCode: 'full_summary',
-      templateName: '전체 리포트',
-      studentName: '배짱(김배짱)',
-      periodLabel: '분석 기간: 2025-10-01 ~ 2025-10-31',
-      categoryLabel: '카테고리: 전체',
-      purposeCode: 'parent',
-      purposeLabel: '학부모 상담용',
-      status: 'completed',
-      createdAt: '2025-10-24T10:00:00+09:00',
-      expiresAt: '2025-10-31T10:00:00+09:00',
-      outputs: ['pdf'],
-    },
-    {
-      id: 'demo-2',
-      templateCode: 'school_submit',
-      templateName: '학교 제출용 리포트',
-      studentName: '팽팽(박팽팽)',
-      periodLabel: '분석 기간: 2025-10-15 ~ 2025-11-15',
-      categoryLabel: '카테고리: 전체',
-      purposeCode: 'school',
-      purposeLabel: '학교 제출용',
-      status: 'completed',
-      createdAt: '2025-11-08T14:00:00+09:00',
-      expiresAt: '2025-11-15T14:00:00+09:00',
-      outputs: ['pdf'],
-    },
-  ]
-
-  // 상태 → 라벨/색 구하기 (필요 시 카드에서 사용)
-  function getStatusLabel(status) {
-    switch (status) {
-      case 'completed':
-      case 'ready':
-        return '준비됨'
-      case 'running':
-      case 'processing':
-        return '생성 중'
-      case 'queued':
-        return '대기 중'
-      case 'failed':
-        return '실패'
-      default:
-        return status || ''
-    }
-  }
-
-  function getStatusBadgeClass(status) {
-    switch (status) {
-      case 'completed':
-      case 'ready':
-        return 'report-status-badge success'
-      case 'running':
-      case 'processing':
-        return 'report-status-badge running'
-      case 'queued':
-        return 'report-status-badge queued'
-      case 'failed':
-        return 'report-status-badge failed'
-      default:
-        return 'report-status-badge'
-    }
-  }
-
-  // 🔹 남은 시간 / 만료 여부 계산
-  function getRemainingInfo(report) {
-    const created = new Date(report.createdAt)
-    const expires = report.expiresAt
-      ? new Date(report.expiresAt)
-      : new Date(created.getTime() + 7 * 24 * 60 * 60 * 1000)
-
-    const totalMs = Math.max(0, expires.getTime() - created.getTime())
-    const now = nowTs
-    const remainingMs = Math.max(0, expires.getTime() - now)
-    const expired = remainingMs <= 0
-
-    // 진행률: 남은 비율(0~1)
-    const ratio = totalMs > 0 ? remainingMs / totalMs : 0
-    const percent = Math.round(ratio * 100)
-
-    // 시/분/초로 표시
-    const sec = Math.floor(remainingMs / 1000)
-    const hours = Math.floor(sec / 3600)
-    const minutes = Math.floor((sec % 3600) / 60)
-    const seconds = sec % 60
-
-    let label = ''
-    if (expired) {
-      label = '만료됨'
-    } else {
-      label = `${hours}시간 ${minutes}분 ${seconds}초`
-    }
-
-    return {
-      label,
-      expired,
-      percent,
-    }
-  }
-
-  // 실제로는 report_runs + report_outputs join 결과를
-  // 리턴하는 API를 붙이면 됨.
   async function fetchReports() {
     setLoading(true)
     setError(null)
-
     try {
-      const qs = new URLSearchParams()
+      const data = await apiFetch('/report-runs')
+      // server.js가 { runs: ... }가 아니라 배열을 직접 줄 수도 있고, 아닐 수도 있음
+      // 현재 서버 코드는 res.json(data) 이고 data는 배열일 가능성이 높음.
+      // 하지만 insert return은 객체이므로 list 조회 로직을 확인해야 함.
+      // list api는 배열을 반환한다고 가정.
+      const runs = Array.isArray(data?.runs) ? data.runs : Array.isArray(data) ? data : []
 
-      if (filterMode === 'range') {
-        if (startDate) qs.append('from', startDate)
-        if (endDate) qs.append('to', endDate)
-      } else if (filterMode === 'single' && singleDate) {
-        qs.append('on', singleDate)
+      let normalized = normalizeReportRuns(runs)
+      if (currentUser?.id) {
+        const userId = currentUser.id
+        normalized = normalized.filter(r => {
+          const params = (r.raw && r.raw.params) || {}
+          const createdBy = params.created_by_user_id || r.raw?.requested_by
+          if (!createdBy) return true
+          return createdBy === userId
+        })
       }
-
-      if (category && category !== 'all') {
-        qs.append('category', category)
-      }
-      if (studentId && studentId !== 'all') {
-        qs.append('student_id', studentId)
-      }
-      if (purpose && purpose !== 'all') {
-        qs.append('purpose', purpose)
-      }
-
-      const url = qs.toString() ? `/report-runs?${qs}` : '/report-runs'
-      let data = null
-
-      try {
-        data = await apiFetch(url)
-      } catch (e) {
-        // 아직 API 없을 수 있으니, 아래 catch에서 예시 데이터로 대체
-        throw e
-      }
-
-      const runs = Array.isArray(data?.runs) ? data.runs : data || []
-
-      const normalized = runs.map(run => {
-        const params = run.params || {}
-        const template = run.template || {}
-        const outputs = run.outputs || []
-
-        const hasPdf = outputs.some(o => o.kind === 'pdf')
-        const hasXlsx =
-          outputs.some(o => o.kind === 'xlsx' || o.kind === 'excel')
-
-        const from = params.from ?? params.start_date
-        const to = params.to ?? params.end_date
-
-        const purposeCode =
-          run.purpose_code ?? params.purpose_code ?? params.purpose
-        const purposeLabel =
-          run.purpose_label ??
-          params.purpose_label ??
-          (purposeCode === 'parent'
-            ? '학부모 상담용'
-            : purposeCode === 'school'
-            ? '학교 제출용'
-            : '리포트')
-
-        const createdAt = run.created_at
-        const expiresAt =
-          run.expires_at ??
-          (createdAt
-            ? new Date(
-                new Date(createdAt).getTime() + 7 * 24 * 60 * 60 * 1000,
-              ).toISOString()
-            : null)
-
-        const firstPdf = outputs.find(o => o.kind === 'pdf') || null
-
-        return {
-          id: run.id,
-          templateCode: template.code ?? run.template_code,
-          templateName: template.name ?? run.template_name ?? '리포트',
-          studentName: params.student_name ?? params.student_label ?? '학생',
-          periodLabel:
-            from && to
-              ? `분석 기간: ${from} ~ ${to}`
-              : from
-              ? `분석 기간: ${from} ~`
-              : '',
-          categoryLabel:
-            params.category_label ??
-            (params.category ? `카테고리: ${params.category}` : ''),
-          purposeCode,
-          purposeLabel,
-          status: run.status,
-          createdAt,
-          expiresAt,
-          outputs: [hasPdf ? 'pdf' : null, hasXlsx ? 'xlsx' : null].filter(
-            Boolean,
-          ),
-          // 백엔드에서 직접 download_url 을 내려주면 그것을 사용
-          downloadPath:
-            firstPdf?.download_url ||
-            (firstPdf?.id
-              ? `/report-outputs/${firstPdf.id}/download`
-              : null),
-        }
-      })
-
-      // API에서 아무것도 안 오면 데모 데이터 사용
-      setReports(normalized.length ? normalized : demoReports)
+      // 최신순 정렬
+      normalized.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      setReports(normalized)
     } catch (err) {
       console.error(err)
-      setError('리포트 목록을 불러오지 못했습니다. (예시 데이터를 표시합니다)')
-      setReports(demoReports)
+      setError('리포트 목록을 불러오지 못했습니다.')
     } finally {
       setLoading(false)
     }
   }
 
-  // 최초 진입 시 목록 조회
+  async function fetchStudents() {
+    setStudentsLoading(true)
+    setStudentsError(null)
+    try {
+      const data = await apiFetch('/api/students?limit=1000')
+      const items = Array.isArray(data?.items) ? data.items : data || []
+      setStudents(items)
+    } catch (err) {
+      console.error(err)
+      setStudentsError('학생 목록을 불러오지 못했습니다.')
+    } finally {
+      setStudentsLoading(false)
+    }
+  }
+
   useEffect(() => {
     fetchReports()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    fetchStudents()
+  }, [currentUser])
 
-  // 남은 시간 표시용 타이머 (1초마다 nowTs 갱신)
   useEffect(() => {
-    const timer = setInterval(() => {
-      setNowTs(Date.now())
-    }, 1000)
+    const timer = setInterval(() => setNowTs(Date.now()), 60 * 1000)
     return () => clearInterval(timer)
   }, [])
 
-  // 만료된 리포트는 목록에서 제거 (보이지 않음)
-  const activeReports = useMemo(
-    () =>
-      reports.filter(r => {
-        const { expired } = getRemainingInfo(r)
-        return !expired
-      }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [reports, nowTs],
-  )
-
-  const totalCount = activeReports.length
-
-  function handleFilterSubmit(e) {
-    e.preventDefault()
-
-    if (filterMode === 'range' && isInvalidRange) {
-      alert('시작일이 종료일보다 늦을 수 없습니다. 기간을 다시 선택해주세요.')
-      return
-    }
-
-    // 여기서는 "조회" 역할만 수행.
-    fetchReports()
-  }
+  const totalCount = reports.length
 
   function handleResetFilters() {
     setFilterMode('range')
@@ -334,543 +231,351 @@ export default function Report() {
     setCategory('all')
     setStudentId('all')
     setPurpose('all')
-    fetchReports()
   }
 
-  // 상세보기는 아직 UI/UX 미정이므로 자리만 만들어두기
-  function handleViewDetail(report) {
-    console.log('리포트 상세보기 (추후 구현 예정): ', report.id)
-    alert('상세보기 페이지는 추후에 구현할 예정입니다.')
-  }
-
-  // 삭제 버튼
   async function handleDelete(report) {
-    if (
-      !window.confirm(
-        '해당 리포트를 삭제하시겠습니까? (삭제 후에는 다시 다운로드할 수 없습니다.)',
-      )
-    )
-      return
-
+    if (!window.confirm(`"${report.templateName}" 리포트를 삭제하시겠습니까?`)) return
     try {
-      if (!USE_MOCK) {
-        await apiFetch(`/report-runs/${report.id}`, {
-          method: 'DELETE',
-        })
-      }
+      await apiFetch(`/report-runs/${report.id}`, { method: 'DELETE' })
       setReports(prev => prev.filter(r => r.id !== report.id))
-    } catch (e) {
-      console.error(e)
+    } catch (err) {
+      console.error(err)
       alert('리포트 삭제 중 오류가 발생했습니다.')
     }
   }
 
-  // PDF 다운로드
-  async function handleDownload(report) {
-    const { expired } = getRemainingInfo(report)
-    if (expired) {
-      alert('이미 만료된 리포트입니다. 다시 생성해 주세요.')
-      return
-    }
+  // 🔹 md 리포트 다운로드 (핵심 수정됨)
+  async function handleDownloadMd(report) {
+    const fileName = `${report.studentName || 'report'}_${report.createdAt?.slice(0, 10)}.md`
 
-    try {
-      // 데모 모드에서는 간단한 PDF 비슷한 파일을 생성해서 다운로드
-      if (USE_MOCK) {
-        const content = [
-          `데모 리포트 (PDF 형식 아님)`,
-          '',
-          `템플릿: ${report.templateName}`,
-          `학생: ${report.studentName}`,
-          report.periodLabel,
-          report.categoryLabel,
-          `용도: ${report.purposeLabel}`,
-        ].join('\n')
-
-        const blob = new Blob([content], {
-          type: 'application/pdf',
-        })
-        const url = URL.createObjectURL(blob)
+    // 1) 이미 로드된 데이터(params.markdown)가 있는지 확인
+    const markdownFromParams = report?.raw?.params?.markdown
+    if (markdownFromParams && typeof markdownFromParams === 'string') {
+      try {
+        const blob = new Blob([markdownFromParams], { type: 'text/markdown;charset=utf-8' })
+        const downloadUrl = URL.createObjectURL(blob)
         const a = document.createElement('a')
-        a.href = url
-        a.download = `${report.studentName}_${report.templateName}.pdf`
+        a.href = downloadUrl
+        a.download = fileName
         document.body.appendChild(a)
         a.click()
         a.remove()
-        URL.revokeObjectURL(url)
+        URL.revokeObjectURL(downloadUrl)
         return
+      } catch (err) {
+        console.error('클라이언트 다운로드 오류:', err)
+        // 실패 시 서버 요청으로 폴백
       }
+    }
 
-      // 실제 백엔드 연동 시
-      const token = localStorage.getItem('token') || ''
-      const headers = token ? { Authorization: `Bearer ${token}` } : {}
+    // 2) 데이터가 없으면 백엔드 다운로드 API 호출
+    const path = report.mdDownloadPath
+    if (!path) {
+      alert('다운로드 경로가 없습니다.')
+      return
+    }
 
-      const path =
-        report.downloadPath || `/report-runs/${report.id}/download?format=pdf`
+    // 절대 URL이 아니면 API_BASE 붙이기
+    const url = path.startsWith('http') ? path : `${API_BASE}${path.startsWith('/') ? path : `/${path}`}`
 
-      const res = await fetch(
-        path.startsWith('http') ? path : API_BASE + path,
-        {
-          method: 'GET',
-          headers,
-        },
-      )
-
+    try {
+      const res = await fetch(url)
       if (!res.ok) {
-        throw new Error('리포트 파일을 다운로드할 수 없습니다.')
+        if (res.status === 404) throw new Error('서버에 저장된 마크다운 파일이 없습니다.')
+        throw new Error('다운로드 실패')
       }
-
       const blob = await res.blob()
-      const url = URL.createObjectURL(blob)
+      const downloadUrl = URL.createObjectURL(blob)
       const a = document.createElement('a')
-      a.href = url
-      a.download = `${report.studentName}_${report.templateName}.pdf`
+      a.href = downloadUrl
+      a.download = fileName
       document.body.appendChild(a)
       a.click()
       a.remove()
-      URL.revokeObjectURL(url)
-    } catch (e) {
-      console.error(e)
-      alert('다운로드 중 오류가 발생했습니다.')
+      URL.revokeObjectURL(downloadUrl)
+    } catch (err) {
+      console.error(err)
+      alert(`리포트 다운로드 중 오류가 발생했습니다.\n(${err.message})`)
     }
   }
 
-  // ---------- Gemini AI 리포트 생성 & 즉시 다운로드(.md) ----------
-  // 🔸 여기서 날짜 / 학생정보 / 카테고리를 모두 고려해서 payload 구성
-
   async function handleGenerateAiReport() {
     if (filterMode === 'range' && isInvalidRange) {
-      alert('시작일이 종료일보다 늦을 수 없습니다. 기간을 다시 선택해주세요.')
+      alert('시작일이 종료일보다 늦을 수 없습니다.')
       return
     }
 
     const from = filterMode === 'range' ? startDate || null : singleDate || null
-    const to =
-      filterMode === 'range'
-        ? endDate || startDate || null
-        : singleDate || null
+    const to = filterMode === 'range' ? endDate || startDate || null : singleDate || null
 
     if (!from) {
-      alert('리포트를 생성할 날짜(또는 기간)를 선택해 주세요.')
+      alert('날짜를 선택해 주세요.')
       return
     }
-
     if (!studentId || studentId === 'all') {
-      alert('리포트를 생성할 학생을 선택해 주세요.')
+      alert('학생을 선택해 주세요.')
       return
     }
 
-    // 선택된 카테고리 메타 정보
-    const categoryConfig =
-      REPORT_CATEGORY_CONFIG[category] || REPORT_CATEGORY_CONFIG.all
+    const categoryConfig = REPORT_CATEGORY_CONFIG[category] || REPORT_CATEGORY_CONFIG.all
+    setGenerating(true)
+    setGenerateError(null)
 
     try {
-      setGenerating(true)
-      setGenerateError(null)
+      // 데이터 수집 (프로필, 통계, 로그)
+      const [studentProfile, summaryStats, activityLogs] = await Promise.all([
+        apiFetch(`/api/students/${encodeURIComponent(studentId)}`).catch(() => null),
+        apiFetch(`/api/dashboard?studentId=${studentId}&from=${from}&to=${to}`).catch(() => null),
+        apiFetch(`/api/log_entries?student_id=${studentId}&from=${from}&to=${to}&limit=50`).catch(() => null)
+      ])
 
-      // 1) 학생 프로필
-      let studentProfile = null
-      try {
-        studentProfile = await apiFetch(`/api/students/${studentId}`)
-      } catch (e) {
-        console.warn('학생 정보를 불러오지 못했습니다.', e)
-      }
-
-      // 2) 대시보드 요약 (선택한 날짜/학생 기준)
-      let summaryStats = {}
-      try {
-        const dash = await apiFetch(
-          `/api/dashboard?studentId=${encodeURIComponent(
-            studentId,
-          )}&from=${from}&to=${to}`,
-        )
-        summaryStats = {
-          metrics: dash.metrics || {},
-          emotion_distribution: dash.emotionDistribution || [],
-          activity_series: dash.activitySeries || [],
-          activity_ability_list: dash.activityAbilityList || [],
-        }
-      } catch (e) {
-        console.warn('대시보드 데이터를 불러오지 못했습니다.', e)
-      }
-
-      // 3) 활동 샘플 (선택한 날짜/학생 기준)
-      let activitySamples = []
-      try {
-        const logs = await apiFetch(
-          `/api/log_entries?student_id=${encodeURIComponent(
-            studentId,
-          )}&from=${from}&to=${to}&limit=50`,
-        )
-        const items = Array.isArray(logs?.items) ? logs.items : logs || []
-        activitySamples = items.map(item => ({
-          id: item.id,
-          date: item.log_date,
-          emotion_tag: item.emotion_tag,
-          activity_tags: item.activity_tags,
-          log_content: item.log_content,
-          related_metrics: item.related_metrics,
-        }))
-      } catch (e) {
-        console.warn('활동 샘플을 불러오지 못했습니다.', e)
-      }
+      const activitySamples = activityLogs?.items?.map(item => ({
+        id: item.id,
+        date: item.log_date,
+        emotion_tag: item.emotion_tag,
+        activity_tags: item.activity_tags,
+        log_content: item.log_content,
+        related_metrics: item.related_metrics,
+      })) || []
 
       const tone =
-        purpose === 'parent'
-          ? '부드럽고 공감적인 학부모 상담용 톤'
-          : purpose === 'school'
-          ? '공식적이고 간결한 학교 제출용 톤'
-          : '분석적이고 요약 중심의 톤'
+        purpose === 'parent' ? '부드럽고 공감적인 학부모 상담용 톤' :
+        purpose === 'school' ? '학교 제출용 공식적인 톤' : '교사가 참고하기 좋은 중립적인 톤'
 
-      const payload = {
-        // 🔸 학생 정보
+      const aiPayload = {
         student_profile: studentProfile,
-        // 🔸 날짜 범위
-        date_range: { start_date: from, end_date: to },
-        // 🔸 집계 데이터
+        date_range: { from, to },
         summary_stats: summaryStats,
-        // 🔸 활동 샘플
         activity_samples: activitySamples,
-        // 🔸 프롬프트 옵션 (카테고리 / 목적 / 톤 / 선택한 학생 ID 포함)
         report_options: {
-          purpose, // 'parent' | 'school' | 'all'
-          tone, // 자연어 설명
+          purpose,
+          tone,
           category_code: categoryConfig.code,
           category_label: categoryConfig.label,
-          category_description: categoryConfig.description,
           student_id: studentId,
           filter_mode: filterMode,
         },
       }
 
-      const result = await generateReportWithGemini(payload)
-
-      if (!result || result.ok === false) {
-        throw new Error(result?.message || 'AI 리포트 생성 실패')
-      }
-
+      // 1. Gemini로 리포트 생성
+      const result = await generateReportWithGemini(aiPayload)
       const markdown = result.markdown || result.text || ''
-      if (!markdown) {
-        throw new Error('AI가 리포트 내용을 반환하지 않았습니다.')
+      if (!markdown) throw new Error('AI가 리포트 내용을 반환하지 않았습니다.')
+
+      // 2. DB 저장
+      const studentName = studentProfile?.name || students.find(s => s.id === studentId)?.name || '학생'
+      const dateLabel = from && to && from !== to ? `${from} ~ ${to}` : from || ''
+      const categoryLabel = categoryConfig.label || '종합 리포트'
+      const title = `${studentName} ${dateLabel} ${categoryLabel}`.trim()
+
+      const reportParams = {
+        title,
+        from,
+        to,
+        filter_mode: filterMode,
+        category_code: categoryConfig.code,
+        category_label: categoryConfig.label,
+        purpose,
+        student_id: studentId,
+        student_name: studentName,
+        markdown, // 🚨 핵심: AI가 생성한 마크다운을 여기에 포함
+        created_by_user_id: currentUser?.id,
+        created_by_name: currentUser?.display_name || currentUser?.email,
       }
 
-      const blob = new Blob([markdown], {
-        type: 'text/markdown;charset=utf-8',
+      await apiFetch('/report-runs', {
+        method: 'POST',
+        body: {
+          template_code: 'ai_markdown',
+          requested_by: currentUser?.id,
+          params: reportParams, // params 내부에 markdown 포함됨
+        },
       })
-      const filename = `${(studentProfile?.name || '학생')
-        .replace(/\s+/g, '_')
-        .slice(0, 30)}_${from}_리포트.md`
 
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = filename
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-      URL.revokeObjectURL(url)
-    } catch (e) {
-      console.error(e)
+      // 목록 갱신
+      await fetchReports()
+      alert('AI 리포트가 성공적으로 생성되었습니다.')
+    } catch (err) {
+      console.error(err)
       setGenerateError('AI 리포트 생성 중 오류가 발생했습니다.')
-      alert('AI 리포트 생성 중 오류가 발생했습니다.')
+      alert('AI 리포트 생성 실패')
     } finally {
       setGenerating(false)
     }
   }
 
   return (
-    <Layout title="">
-      <div className="main-shell">
-        <div className="main-inner report-page">
-          {/* 상단 설명 */}
-          <header className="report-header">
-            <p className="muted">
-              날짜, 학생, 카테고리를 선택하면 해당 조건에 맞는 리포트를 조회하거나
-              Gemini로 AI 리포트를 생성할 수 있습니다.
+    <Layout>
+      <div className="page-container">
+        <header className="page-header">
+          <div>
+            <h1 className="page-title">AI 리포트</h1>
+            <p className="page-subtitle">
+              로그인한 사용자가 생성한 리포트들을 한눈에 보고, 새로운 AI 리포트를 제작해 보세요.
             </p>
-          </header>
+          </div>
+        </header>
 
-          {/* 필터 카드 */}
-          <section className="report-filter-card">
-            <form onSubmit={handleFilterSubmit}>
-              <div className="report-filter-title-row">
-                <div className="filter-icon">🧾</div>
-                <div>
-                  <div className="card-title">필터 설정</div>
-                  <div className="muted" style={{ fontSize: 13 }}>
-                    날짜, 카테고리, 학생을 선택하여 원하는 리포트만 모아볼 수
-                    있어요.
+        <div className="page-content report-layout">
+          {/* 필터 섹션 */}
+          <section className="report-filter-section">
+            <div className="card report-filter-card">
+              <form onSubmit={e => e.preventDefault()}>
+                <div className="report-filter-title-row">
+                  <div className="filter-icon">🧾</div>
+                  <div>
+                    <div className="card-title">리포트 제작 설정</div>
+                    <div className="muted" style={{ fontSize: 13 }}>
+                      날짜, 카테고리, 학생을 선택하여 AI 리포트를 생성합니다.
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {/* 날짜 필터 방식 */}
-              <div className="report-filter-block">
-                <div className="filter-label-row">
-                  <span className="filter-label">날짜 필터 방식</span>
-                  <span className="filter-mode-text muted">
-                    리포트를 생성한 날짜 기준으로 검색합니다.
-                  </span>
+                <div className="report-filter-block">
+                  <div className="filter-label-row">
+                    <span className="filter-label">날짜 필터 방식</span>
+                  </div>
+                  <div className="filter-radio-row">
+                    <button
+                      type="button"
+                      className={`filter-toggle ${filterMode === 'range' ? 'active' : ''}`}
+                      onClick={() => setFilterMode('range')}
+                    >
+                      날짜 범위
+                    </button>
+                    <button
+                      type="button"
+                      className={`filter-toggle ${filterMode === 'single' ? 'active' : ''}`}
+                      onClick={() => setFilterMode('single')}
+                    >
+                      특정 날짜
+                    </button>
+                  </div>
                 </div>
-                <div className="filter-radio-row">
-                  <button
-                    type="button"
-                    className={
-                      filterMode === 'range'
-                        ? 'filter-toggle active'
-                        : 'filter-toggle'
-                    }
-                    onClick={() => setFilterMode('range')}
-                  >
-                    날짜 범위
-                  </button>
-                  <button
-                    type="button"
-                    className={
-                      filterMode === 'single'
-                        ? 'filter-toggle active'
-                        : 'filter-toggle'
-                    }
-                    onClick={() => setFilterMode('single')}
-                  >
-                    특정 날짜
-                  </button>
-                </div>
-              </div>
 
-              {/* 날짜 + 카테고리 + 학생 + 용도 */}
-              <div className="report-filter-grid">
-                {filterMode === 'range' ? (
-                  <>
+                <div className="report-filter-grid">
+                  {filterMode === 'range' ? (
+                    <>
+                      <div className="filter-field">
+                        <label>시작 날짜</label>
+                        <input type="date" value={startDate} max={endDate} onChange={e => setStartDate(e.target.value)} />
+                      </div>
+                      <div className="filter-field">
+                        <label>종료 날짜</label>
+                        <input type="date" value={endDate} min={startDate} onChange={e => setEndDate(e.target.value)} />
+                      </div>
+                    </>
+                  ) : (
                     <div className="filter-field">
-                      <label>시작 날짜</label>
-                      <input
-                        type="date"
-                        value={startDate}
-                        max={endDate || undefined}
-                        onChange={e => setStartDate(e.target.value)}
-                      />
+                      <label>날짜</label>
+                      <input type="date" value={singleDate} onChange={e => setSingleDate(e.target.value)} />
                     </div>
-                    <div className="filter-field">
-                      <label>종료 날짜</label>
-                      <input
-                        type="date"
-                        value={endDate}
-                        min={startDate || undefined}
-                        onChange={e => setEndDate(e.target.value)}
-                      />
-                    </div>
-                  </>
-                ) : (
+                  )}
+
                   <div className="filter-field">
-                    <label>특정 날짜</label>
-                    <input
-                      type="date"
-                      value={singleDate}
-                      onChange={e => setSingleDate(e.target.value)}
-                    />
+                    <label>카테고리</label>
+                    <select value={category} onChange={e => setCategory(e.target.value)} className="report-select">
+                      <option value="all">전체</option>
+                      <option value="full">전체 리포트</option>
+                      <option value="emotion">감정 변화</option>
+                      <option value="activity_ratio">활동 비율 변화</option>
+                      <option value="ability_growth">능력 성장 곡선</option>
+                    </select>
                   </div>
-                )}
 
-                <div className="filter-field">
-                  <label>카테고리</label>
-                  <select
-                    value={category}
-                    onChange={e => setCategory(e.target.value)}
-                    className="report-select"
-                  >
-                    <option value="all">전체</option>
-                    <option value="full">전체 리포트</option>
-                    <option value="emotion">감정 변화</option>
-                    <option value="activity_ratio">활동 비율 변화</option>
-                    <option value="ability_growth">능력 성장 곡선</option>
-                  </select>
+                  <div className="filter-field">
+                    <label>학생</label>
+                    <select value={studentId} onChange={e => setStudentId(e.target.value)} className="report-select">
+                      <option value="all">전체</option>
+                      {students.map(s => (
+                        <option key={s.id} value={s.id}>{s.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="filter-field">
+                    <label>용도</label>
+                    <select value={purpose} onChange={e => setPurpose(e.target.value)} className="report-select">
+                      <option value="all">전체</option>
+                      <option value="parent">학부모 상담용</option>
+                      <option value="school">학교 제출용</option>
+                    </select>
+                  </div>
                 </div>
 
-                <div className="filter-field">
-                  <label>학생</label>
-                  <select
-                    value={studentId}
-                    onChange={e => setStudentId(e.target.value)}
-                    className="report-select"
-                  >
-                    <option value="all">전체</option>
-                    {/* TODO: 나중에 /api/students 연동해서 실제 학생 목록으로 교체 가능 */}
-                    <option value="jiwon-u">지원(우지원)</option>
-                    <option value="jiwon-a">지원(안지원)</option>
-                  </select>
+                <div className="report-filter-footer">
+                  <span className="muted">현재 리포트 수: <strong>{totalCount}</strong>개</span>
+                  <div className="report-filter-actions">
+                    <button type="button" className="btn secondary report-reset-btn" onClick={handleResetFilters}>필터 초기화</button>
+                    <button
+                      type="button"
+                      className="btn secondary report-ai-btn"
+                      onClick={handleGenerateAiReport}
+                      disabled={generating}
+                    >
+                      {generating ? '생성 중...' : 'AI 리포트 생성(.md)'}
+                    </button>
+                  </div>
                 </div>
-
-                <div className="filter-field">
-                  <label>용도</label>
-                  <select
-                    value={purpose}
-                    onChange={e => setPurpose(e.target.value)}
-                    className="report-select"
-                  >
-                    <option value="all">전체</option>
-                    <option value="parent">학부모 상담용</option>
-                    <option value="school">학교 제출용</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* 하단: 개수 + 버튼들 */}
-              <div className="report-filter-footer">
-                <span className="muted">
-                  총 <strong>{totalCount}</strong>개의 리포트
-                </span>
-
-                <div className="report-filter-actions">
-                  <button
-                    type="button"
-                    className="btn secondary report-reset-btn"
-                    onClick={handleResetFilters}
-                  >
-                    필터 초기화
-                  </button>
-                  <button
-                    type="button"
-                    className="btn secondary report-ai-btn"
-                    onClick={handleGenerateAiReport}
-                    disabled={generating}
-                  >
-                    {generating ? 'AI 리포트 생성 중...' : 'AI 리포트 생성(.md)'}
-                  </button>
-                  <button type="submit" className="btn">
-                    적용하기
-                  </button>
-                </div>
-              </div>
-
-              {isInvalidRange && (
-                <div
-                  className="muted"
-                  style={{
-                    fontSize: 12,
-                    color: '#EF4444',
-                    marginTop: 4,
-                  }}
-                >
-                  시작일이 종료일보다 늦을 수 없습니다. 날짜를 다시 선택해 주세요.
-                </div>
-              )}
-
-              {generateError && (
-                <div className="error" style={{ marginTop: 4 }}>
-                  {generateError}
-                </div>
-              )}
-            </form>
+                {isInvalidRange && <div className="error" style={{ fontSize: 12, marginTop: 4 }}>날짜 범위를 확인해주세요.</div>}
+                {generateError && <div className="error" style={{ marginTop: 4 }}>{generateError}</div>}
+              </form>
+            </div>
           </section>
 
-          {/* 리포트 카드 리스트 */}
-          <section>
-            {loading ? (
-              <div style={{ marginTop: 16 }}>불러오는 중...</div>
-            ) : (
-              <>
-                {error && (
-                  <div className="error" style={{ marginBottom: 10 }}>
-                    {error}
-                  </div>
-                )}
+          {/* 목록 섹션 */}
+          <section className="report-list-section">
+            <div className="card report-list-card">
+              <div className="card-header-row">
+                <div className="card-title">리포트 목록</div>
+              </div>
+              <p></p>
 
-                <div className="report-list-grid">
-                  {activeReports.map(report => {
-                    const remaining = getRemainingInfo(report)
-                    const canDownload = report.outputs.includes('pdf')
-
+              {loading ? (
+                <div className="card-body"><div className="loading-text">Loading...</div></div>
+              ) : error ? (
+                <div className="card-body"><div className="error">{error}</div></div>
+              ) : totalCount === 0 ? (
+                <div className="card-body"><div className="empty-state">생성된 리포트가 없습니다.</div></div>
+              ) : (
+                <div className="report-list">
+                  {reports.map(report => {
+                    const remaining = getRemainingInfo(report, nowTs)
+                    const rangeText = report.analysisFrom || report.analysisTo ? `${report.analysisFrom || '?'} ~ ${report.analysisTo || '?'}` : null
                     return (
-                      <article key={report.id} className="report-card">
-                        {/* 카드 상단: 아이콘 + 제목/메타 + 상태 뱃지 */}
-                        <div className="report-card-header">
-                          <div className="report-card-icon-wrap">
-                            <div className="report-card-icon">📄</div>
-                          </div>
-
-                          <div className="report-card-title-block">
+                      <article key={report.id} className={`report-card ${remaining.expired ? 'report-card-expired' : ''}`}>
+                        <div className="report-card-main">
+                          <div className="report-card-header">
                             <div className="report-card-title">
-                              {report.studentName}
-                            </div>
-
-                            <div className="report-purpose-badge">
-                              {report.purposeLabel}
-                            </div>
-
-                            <div className="report-card-meta">
-                              <div>{report.periodLabel}</div>
-                              <div>{report.categoryLabel}</div>
+                              <span className="report-card-student">🔗 {report.studentName}</span>
+                              {report.purposeLabel && <span className="report-chip report-chip-purpose">{report.purposeLabel}</span>}
+                              <span className={`report-chip report-chip-state ${remaining.expired ? 'expired' : ''}`}>
+                                {remaining.expired ? '만료됨' : '진행 중'}
+                              </span>
                             </div>
                           </div>
-
-                          <div className="report-card-status">
-                            <span
-                              className={getStatusBadgeClass(report.status)}
-                            >
-                              {getStatusLabel(report.status)}
+                          {rangeText && <div className="report-card-meta-row">분석 기간: {rangeText}</div>}
+                          <div className="report-card-remaining-row">
+                            <span className="report-remaining-icon">⏱</span>
+                            <span className={`report-remaining-text ${remaining.expired ? 'danger' : ''}`}>
+                              남은 시간: {remaining.label}
                             </span>
                           </div>
                         </div>
-
-                        {/* 남은 시간 + 진행 바 */}
-                        <div className="report-remaining-row">
-                          <span className="muted">
-                            ⏱ 남은 시간: {remaining.label}
-                          </span>
-                        </div>
-                        <div className="report-deadline-progress">
-                          <div className="report-deadline-bar">
-                            <div
-                              className="report-deadline-inner"
-                              style={{
-                                width: `${remaining.percent}%`,
-                              }}
-                            />
-                          </div>
-                        </div>
-
-                        {/* 하단: 생성일 + 오른쪽 세로 버튼(상세보기/다운/삭제) */}
-                        <div className="report-card-footer">
-                          <div className="report-card-footer-left">
-                            <span className="muted report-created-at">
-                              생성일:{' '}
-                              {report.createdAt
-                                ? report.createdAt.slice(0, 10)
-                                : '-'}
-                            </span>
-                          </div>
-
-                          <div className="report-card-actions report-card-actions-col">
-                            <button
-                              type="button"
-                              className="btn report-btn"
-                              onClick={() => handleViewDetail(report)}
-                            >
-                              상세보기
-                            </button>
-                            <button
-                              type="button"
-                              className="btn secondary report-btn"
-                              disabled={!canDownload}
-                              onClick={() => handleDownload(report)}
-                            >
-                              다운로드
-                            </button>
-                            <button
-                              type="button"
-                              className="btn danger-outline report-btn"
-                              onClick={() => handleDelete(report)}
-                            >
-                              삭제
-                            </button>
-                          </div>
+                        <div className="report-card-actions">
+                          <button type="button" className="btn secondary-outline report-btn" onClick={() => handleDownloadMd(report)}>
+                            다운로드
+                          </button>
+                          <button type="button" className="btn danger-outline report-btn" onClick={() => handleDelete(report)}>
+                            삭제
+                          </button>
                         </div>
                       </article>
                     )
                   })}
                 </div>
-              </>
-            )}
+              )}
+            </div>
           </section>
         </div>
       </div>

@@ -1,4 +1,4 @@
-require('dotenv').config()
+﻿require('dotenv').config()
 const express = require('express')
 const { supabase } = require('./supabaseClient')
 const multer = require('multer')
@@ -35,6 +35,80 @@ function parseJsonFromText(text) {
     return JSON.parse(cleaned)
   } catch (e) {
     console.error('Gemini JSON 파싱 에러:', e)
+    return null
+  }
+}
+
+// 업로드된 파일에서 순수 텍스트만 추출하는 유틸
+async function extractPlainTextFromFile(file) {
+  if (!file) return null
+
+  // 원래 MIME 타입
+  const originalMime = file.mimetype || 'application/octet-stream'
+
+  // 1) text/* 파일은 우선 UTF-8 로 직접 디코딩
+  if (originalMime.startsWith('text/')) {
+    try {
+      return file.buffer.toString('utf8')
+    } catch (e) {
+      console.error('텍스트 파일 디코딩 에러:', e)
+    }
+  }
+
+  // 2) Gemini 가 설정되지 않은 경우 여기서 종료
+  if (!gemini) {
+    return null
+  }
+
+  // 3) Gemini에 전달할 MIME 타입 정규화
+  let mimeType = originalMime
+
+  // Hancom PDF 같은 특이 타입 → 일반 PDF 로 보정
+  if (
+    mimeType === 'application/haansoftpdf' ||
+    mimeType === 'application/x-haansoftpdf'
+  ) {
+    mimeType = 'application/pdf'
+  } else if (!/^application\/(pdf|json|octet-stream)$/.test(mimeType)) {
+    // 그 외 이상한 application/* 타입들은 범용 바이너리로 보냄
+    mimeType = 'application/octet-stream'
+  }
+
+  try {
+    const base64 = file.buffer.toString('base64')
+    const modelName =
+      process.env.GEMINI_TEXT_MODEL ||
+      process.env.GEMINI_EXTRACTION_MODEL ||
+      'gemini-2.5-flash'
+
+    const model = gemini.getGenerativeModel({ model: modelName })
+
+    const promptText = `
+당신은 업로드된 파일에서 사람이 읽을 수 있는 텍스트만 최대한 그대로 추출하는 도우미입니다.
+
+- PDF, 이미지, 기타 문서에서 사람이 읽을 수 있는 문장만 뽑아 주세요.
+- 표나 레이아웃 정보는 단순한 줄바꿈 텍스트로 표현해 주세요.
+- 추가 설명, 요약, 분석 문장은 넣지 마세요.
+- JSON, Markdown 코드블록, 따옴표 없이 순수한 텍스트만 그대로 출력하세요.
+`
+
+    const result = await model.generateContent([
+      {
+        inlineData: {
+          data: base64,
+          mimeType, // ← 여기서 정규화된 mimeType 사용
+        },
+      },
+      { text: promptText },
+    ])
+
+    let text = result.response.text() || ''
+    text = text.trim()
+    // 혹시 ``` 로 감싸져 온 경우 제거
+    text = text.replace(/^```[a-zA-Z]*\s*/i, '').replace(/```$/i, '').trim()
+    return text || null
+  } catch (e) {
+    console.error('Gemini 텍스트 추출 에러:', e)
     return null
   }
 }
@@ -125,7 +199,8 @@ app.post(['/auth/login', '/api/auth/login'], async (req, res) => {
 /**
  * POST /uploads, /api/uploads
  * - 프론트에서 FormData 로 file 하나만 보냄
- * - Supabase ingest_uploads 에 메타데이터만 기록 (Storage 업로드는 생략)
+ * - Supabase ingest_uploads 에 메타데이터만 기록하고,
+ *   텍스트를 추출해서 ingest_uploads.raw_text 에 저장
  */
 app.post(
   ['/uploads', '/api/uploads'],
@@ -145,6 +220,7 @@ app.post(
       const now = new Date().toISOString()
       const storageKey = `uploads/${Date.now()}-${originalName}`
 
+      // 1) ingest_uploads 에 메타데이터 저장
       const { data, error } = await supabase
         .from('ingest_uploads')
         .insert([
@@ -168,10 +244,43 @@ app.post(
         return res.status(500).json({ message: 'DB Error', error })
       }
 
-      res.status(201).json(data)
+      // 2) 업로드된 파일에서 원본 텍스트 추출
+      let rawText = null
+      try {
+        rawText = await extractPlainTextFromFile(file)
+      } catch (e) {
+        console.error('extractPlainTextFromFile 에러:', e)
+      }
+
+      // 3) 추출된 텍스트가 있으면 ingest_uploads.raw_text 에 저장
+      if (rawText) {
+        try {
+          const { error: upErr } = await supabase
+            .from('ingest_uploads')
+            .update({
+              raw_text: rawText,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', data.id)
+
+          if (upErr) {
+            console.error('ingest_uploads raw_text 업데이트 에러:', upErr)
+          } else {
+            // 프론트에서 바로 사용할 수 있도록 응답 객체에도 포함
+            data.raw_text = rawText
+          }
+        } catch (e) {
+          console.error('ingest_uploads raw_text 업데이트 예외:', e)
+        }
+      }
+
+      // 4) 최종 응답
+      return res.status(201).json(data)
     } catch (e) {
       console.error('POST /uploads 에러:', e)
-      res.status(500).json({ message: 'Upload Error', error: e.toString() })
+      return res
+        .status(500)
+        .json({ message: 'Upload Error', error: e.toString() })
     }
   },
 )
@@ -232,26 +341,61 @@ app.get(['/uploads', '/api/uploads'], async (req, res) => {
 
 /**
  * GET /uploads/:id, /api/uploads/:id
- * - 단일 업로드 정보
+ * - ingest_uploads 1건 + log_entries 를 함께 내려주면서
+ *   raw_text 를 log_content 기반으로 만들어서 반환
  */
 app.get(['/uploads/:id', '/api/uploads/:id'], async (req, res) => {
   const { id } = req.params
+
   try {
-    const { data, error } = await supabase
+    // 1) 업로드 기본 정보 조회
+    const { data: upload, error: uploadErr } = await supabase
       .from('ingest_uploads')
       .select('*')
       .eq('id', id)
       .single()
 
-    if (error || !data) {
-      console.error('uploads 단일 조회 에러:', error)
-      return res.status(404).json({ message: '업로드를 찾을 수 없습니다.' })
+    if (uploadErr || !upload) {
+      console.error('uploads 단일 조회 에러:', uploadErr)
+      return res
+        .status(404)
+        .json({ message: '업로드를 찾을 수 없습니다.' })
     }
 
-    res.json(data)
+    // 2) 이 업로드와 연결된 log_entries 조회
+    const { data: logs, error: logsErr } = await supabase
+      .from('log_entries')
+      .select('*')
+      .eq('source_file_path', upload.file_name)
+      .order('log_date', { ascending: true })
+
+    if (logsErr) {
+      console.error('log_entries 조회 에러 (uploads/:id):', logsErr)
+    }
+
+    const logEntriesRaw = logs || []
+
+    // 3) raw_text 계산
+    let rawText = upload.raw_text || null
+    if (!rawText && logEntriesRaw.length > 0) {
+      rawText = logEntriesRaw[0].log_content || null
+    }
+
+    // 4) UploadPage 상세에서 저장된 분석 값이 다시 열었을 때 보이도록
+    //    related_metrics → analysis 로 매핑해서 내려준다.
+    const logEntries = logEntriesRaw.map(entry => ({
+      ...entry,
+      analysis: entry.related_metrics || entry.analysis || {},
+    }))
+
+    return res.json({
+      ...upload,
+      raw_text: rawText, // UploadPage.openDetail 에서 사용
+      log_entries: logEntries,
+    })
   } catch (e) {
     console.error('GET /uploads/:id 에러:', e)
-    res
+    return res
       .status(500)
       .json({ message: 'Server Error', error: e.toString() })
   }
@@ -295,7 +439,8 @@ app.delete(['/uploads/:id', '/api/uploads/:id'], async (req, res) => {
  *   raw_text: "텍스트 전문",
  *   log_entries: [
  *     {
- *       student_id: "...",
+ *       student_id: "...",          // AI에서 온 가짜 ID(a1-..., ai-...)일 수도 있음
+ *       student_name: "홍길동",     // 프론트에서 같이 보내줌
  *       log_date: "2025-11-21",
  *       emotion_tag: "기쁨",
  *       activity_tags: ["미술", "글쓰기"],
@@ -317,17 +462,128 @@ app.post(['/uploads/:id/log', '/api/uploads/:id/log'], async (req, res) => {
   }
 
   try {
+    // 1) UUID 형식 체크용 정규식
+    const uuidRegex =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+    // 2) Supabase에 아직 없는 "AI 추출 학생" 후보 이름 수집
+    const nameSet = new Set()
+
+    for (const e of log_entries) {
+      if (!e) continue
+      const rawId = e.student_id ? String(e.student_id) : ''
+      const name = (e.student_name || '').trim()
+
+      // student_id 가 없거나 UUID 형식이 아니고, 이름이 있으면 새 학생 후보
+      if ((!rawId || !uuidRegex.test(rawId)) && name) {
+        nameSet.add(name)
+      }
+    }
+
+    const namesNeedingId = Array.from(nameSet)
+    const nameToStudentId = {}
+
+    // 3) 이미 존재하는 학생들 먼저 조회
+    if (namesNeedingId.length > 0) {
+      const { data: existingStudents, error: existingErr } = await supabase
+        .from('students')
+        .select('id, name')
+        .in('name', namesNeedingId)
+
+      if (existingErr) {
+        console.error('AI 추출 학생 기존 조회 에러:', existingErr)
+      } else if (existingStudents) {
+        for (const stu of existingStudents) {
+          if (stu && stu.name && stu.id) {
+            nameToStudentId[stu.name] = stu.id
+          }
+        }
+      }
+
+      // 4) 아직 없는 이름들만 새로 students 에 insert
+      const namesToCreate = namesNeedingId.filter(
+        name => !nameToStudentId[name],
+      )
+
+      if (namesToCreate.length > 0) {
+        const payload = namesToCreate.map(name => ({
+          // students 테이블에서 name만 NOT NULL, 나머지는 null/default 허용
+          name,
+          // 필요하면 주석 풀어서 메모 남길 수 있음
+          // notes: 'AI 업로드에서 자동 생성된 학생입니다.',
+        }))
+
+        const { data: insertedStudents, error: createErr } = await supabase
+          .from('students')
+          .insert(payload)
+          .select('id, name')
+
+        if (createErr) {
+          console.error('AI 추출 학생 자동 생성 에러:', createErr)
+        } else if (insertedStudents) {
+          for (const stu of insertedStudents) {
+            if (stu && stu.name && stu.id) {
+              nameToStudentId[stu.name] = stu.id
+            }
+          }
+        }
+      }
+    }
+
+    // 5) log_entries → 실제 DB에 넣을 rows 변환
     const rows = log_entries
-      .filter(e => e && e.student_id)
-      .map(e => ({
-        log_date: e.log_date || new Date().toISOString().slice(0, 10),
-        student_id: e.student_id,
-        emotion_tag: e.emotion_tag || null,
-        activity_tags: e.activity_tags || null, // text[]
-        log_content: e.log_content || null,
-        related_metrics: e.related_metrics || null, // jsonb
-        source_file_path: file_name || null,
-      }))
+      .map(e => {
+        if (!e) return null
+
+        let studentId = e.student_id ? String(e.student_id) : ''
+        const name = (e.student_name || '').trim()
+
+        // activity_tags 는 배열로 정규화
+        let activityTags = Array.isArray(e.activity_tags)
+          ? [...e.activity_tags]
+          : e.activity_tags
+          ? [e.activity_tags]
+          : []
+
+        // UUID가 아닌 ID(ai-..., local-...) 또는 비어 있는 경우:
+        //  - student_name 기준으로 students 테이블에서 id 찾기/자동 생성한 id 사용
+        //  - 태그에 "학생:이름" 형태로도 한 줄 남김
+        if (!studentId || !uuidRegex.test(studentId)) {
+          if (name && nameToStudentId[name]) {
+            studentId = nameToStudentId[name]
+            const tagLabel = `학생:${name}`
+            if (!activityTags.includes(tagLabel)) {
+              activityTags.push(tagLabel)
+            }
+          } else {
+            // 이름조차 없으면 이 기록은 저장 불가 → 스킵
+            return null
+          }
+        }
+
+        // 🔸 related_metrics 를 DB 타입(jsonb[])에 맞게 항상 "배열"로 맞춰준다.
+        let metrics = e.related_metrics
+        if (metrics == null) {
+          metrics = null
+        } else if (Array.isArray(metrics)) {
+          // 이미 배열이면 그대로 사용
+          metrics = metrics
+        } else {
+          // 객체 하나면 [ { ... } ] 로 감싸서 jsonb[] 타입에 맞춤
+          metrics = [metrics]
+        }
+
+        return {
+          log_date: e.log_date || new Date().toISOString().slice(0, 10),
+          student_id: studentId, // ✅ log_entries.student_id (uuid NOT NULL) 만족
+          emotion_tag: e.emotion_tag || null,
+          activity_tags: activityTags.length > 0 ? activityTags : null, // text[]
+          log_content: e.log_content || null,
+          related_metrics: metrics, // ✅ 이제 항상 jsonb[] 형식
+          source_file_path: file_name || null,
+        }
+      })
+      .filter(Boolean)
 
     if (rows.length === 0) {
       return res
@@ -335,6 +591,7 @@ app.post(['/uploads/:id/log', '/api/uploads/:id/log'], async (req, res) => {
         .json({ message: '학생 정보가 있는 기록이 없습니다.' })
     }
 
+    // 6) log_entries insert
     const { data: inserted, error: insertErr } = await supabase
       .from('log_entries')
       .insert(rows)
@@ -348,6 +605,7 @@ app.post(['/uploads/:id/log', '/api/uploads/:id/log'], async (req, res) => {
       })
     }
 
+    // 7) ingest_uploads 의 student_id / status 업데이트
     const firstStudentId = rows[0].student_id
 
     const { error: upErr } = await supabase
@@ -622,20 +880,22 @@ app.get('/students/:id/activities', async (req, res) => {
   }
 })
 
-// 학생 추가: 최소한 name만 넣어서 Supabase 컬럼 불일치 오류를 피함
+// 학생 추가
 app.post('/api/students', async (req, res) => {
   try {
-    const { name } = req.body || {}
-
+    const { name, status, admission_date, birth_date, notes } = req.body || {}
     if (!name || typeof name !== 'string' || !name.trim()) {
       return res.status(400).json({ message: 'name은 필수입니다.' })
     }
 
     const payload = {
       name: name.trim(),
-      // 나중에 테이블에 nickname, real_name 같은 컬럼을 만들면
-      // 여기서 같이 넣어주면 됨.
     }
+
+    if (status !== undefined) payload.status = status
+    if (admission_date !== undefined) payload.admission_date = admission_date
+    if (birth_date !== undefined) payload.birth_date = birth_date
+    if (notes !== undefined) payload.notes = notes
 
     console.log('POST /api/students payload:', payload)
 
@@ -647,19 +907,13 @@ app.post('/api/students', async (req, res) => {
 
     if (error) {
       console.error('students 추가 에러:', error)
-      // supabase Error 객체를 그대로 넘기면 JSON.stringify 에서 또 에러날 수 있어서 문자열만 보냄
-      return res.status(500).json({
-        message: 'DB Error',
-        detail: error.message || error.toString(),
-      })
+      return res.status(500).json({ message: '학생 추가 중 오류가 발생했습니다.' })
     }
 
-    return res.status(201).json(data)
-  } catch (e) {
-    console.error('POST /api/students 예외:', e)
-    return res
-      .status(500)
-      .json({ message: 'Server Error', detail: e.toString() })
+    return res.json(data)
+  } catch (err) {
+    console.error('POST /api/students 서버 오류:', err)
+    res.status(500).json({ message: '서버 오류' })
   }
 })
 
@@ -834,10 +1088,6 @@ app.delete('/api/log_entries/:id', async (req, res) => {
 
 /**
  * POST /ai/extract-records 또는 /api/ai/extract-records
- * body: { raw_text: string, file_name?: string }
- *
- * PDF/TXT에서 추출한 원본 텍스트를 기반으로
- * PDF_TXT_EXTRACTION_PROMPT 를 사용해 활동 레코드 JSON을 생성
  */
 app.post(
   ['/ai/extract-records', '/api/ai/extract-records'],
@@ -866,12 +1116,11 @@ app.post(
       }
 
       const modelName =
-        process.env.GEMINI_EXTRACTION_MODEL || 'gemini-1.5-flash'
+        process.env.GEMINI_EXTRACTION_MODEL || 'gemini-2.5-flash'
 
       const model = gemini.getGenerativeModel({
         model: modelName,
         generationConfig: {
-          // JSON 모드
           responseMimeType: 'application/json',
         },
       })
@@ -904,24 +1153,6 @@ app.post(
 
 /**
  * POST /ai/generate-report 또는 /api/ai/generate-report
- *
- * body 예시:
- * {
- *   student_profile: {...},
- *   date_range: {...},
- *   summary_stats: {...},
- *   activity_samples: [...],
- *   report_options: {
- *     purpose: "parent" | "school" | "all",
- *     tone: "부드럽고 ...",
- *     category_code: "full" | "emotion" | "activity_ratio" | "ability_growth",
- *     category_label: "전체 리포트" 등,
- *     student_id: "...",
- *     filter_mode: "range" | "single"
- *   }
- * }
- *
- * prompts.js 의 GET_REPORT_PROMPT 를 사용해 Markdown 리포트 생성
  */
 app.post(
   ['/ai/generate-report', '/api/ai/generate-report'],
@@ -944,7 +1175,6 @@ app.post(
         report_options,
       } = req.body || {}
 
-      // 프론트에서 넘어온 payload를 그대로 넣되, 빠진 값은 기본값으로 보정
       const payload = {
         student_profile: student_profile || null,
         date_range: date_range || null,
@@ -955,7 +1185,6 @@ app.post(
         report_options: report_options || {},
       }
 
-      // ---- 프롬프트용 카테고리 / 목적 / 톤 정리 ----
       const categoryCode =
         (report_options && report_options.category_code) || 'full'
       const categoryLabel =
@@ -973,21 +1202,18 @@ app.post(
         (report_options && report_options.tone) ||
         '분석적이고 요약 중심의 톤'
 
-      // GET_REPORT_PROMPT 는 category(코드/라벨 둘 다 허용), purpose, tone 을 받아
-      // {input_json} 자리까지 포함한 전체 프롬프트 틀을 만들어 준다.
       const basePrompt = GET_REPORT_PROMPT(
         categoryCode || categoryLabel,
         purposeForPrompt,
         toneForPrompt,
       )
 
-      // {input_json} 토큰을 실제 JSON 문자열로 치환
       const finalPrompt = basePrompt.replace(
         '{input_json}',
         JSON.stringify(payload, null, 2),
       )
 
-      const modelName = process.env.GEMINI_REPORT_MODEL || 'gemini-1.5-pro'
+      const modelName = process.env.GEMINI_REPORT_MODEL || 'gemini-2.5-flash'
 
       const model = gemini.getGenerativeModel({
         model: modelName,
@@ -1013,27 +1239,26 @@ app.post(
 )
 
 // -------------------- 대시보드 집계 API (/api/dashboard) --------------------
-/**
- * GET /api/dashboard?studentId=...&from=YYYY-MM-DD&to=YYYY-MM-DD
- *
- * Dashboard.jsx 에서 사용
- */
 app.get('/api/dashboard', async (req, res) => {
-  const { studentId, from, to } = req.query
+  const { studentId, from, to, startDate, endDate } = req.query
+  const fromDate = from || startDate || null
+  const toDate = to || endDate || null
 
   try {
     let query = supabase
       .from('log_entries')
-      .select('log_date, emotion_tag, related_metrics, activity_tags, created_at')
+      .select(
+        'log_date, emotion_tag, related_metrics, activity_tags, log_content, created_at',
+      )
 
     if (studentId) {
       query = query.eq('student_id', studentId)
     }
-    if (from) {
-      query = query.gte('log_date', from)
+    if (fromDate) {
+      query = query.gte('log_date', fromDate)
     }
-    if (to) {
-      query = query.lte('log_date', to)
+    if (toDate) {
+      query = query.lte('log_date', toDate)
     }
 
     const { data, error } = await query
@@ -1046,94 +1271,119 @@ app.get('/api/dashboard', async (req, res) => {
     const logs = data || []
     const recordCount = logs.length
 
-    // ---- 감정 분포 (긍정/부정/중립 단순 분류) ----
-    let pos = 0
-    let neg = 0
-    let neu = 0
-
-    logs.forEach(l => {
-      const tag = (l.emotion_tag || '').toString()
-
-      if (!tag) {
-        neu++
-        return
-      }
-
-      if (/(기쁨|행복|만족|즐거움|긍정|편안)/.test(tag)) {
-        pos++
-      } else if (/(불안|걱정|우울|슬픔|화|짜증|분노|부정)/.test(tag)) {
-        neg++
-      } else {
-        neu++
-      }
-    })
-
-    const positivePercent =
-      recordCount > 0 ? Math.round((pos / recordCount) * 100) : 0
-
-    const emotionDistribution = [
-      { name: '긍정', value: pos },
-      { name: '부정', value: neg },
-      { name: '중립', value: neu },
-    ]
-
-    // ---- 날짜별 활동 시간 ----
+    const emotionCounts = {}
+    const emotionDetailMap = {}
     const byDate = {}
+    const activityDetails = []
+
     logs.forEach(l => {
       const date =
         l.log_date ||
         (l.created_at ? String(l.created_at).slice(0, 10) : null)
-      if (!date) return
 
-      const rm = l.related_metrics || {}
+      const emotionName = (l.emotion_tag || '감정 미기록').toString()
+
+      // 🔸 related_metrics 가 jsonb[] 인 경우 첫 번째 요소 사용
+      const rmRaw = l.related_metrics
+      const rm =
+        Array.isArray(rmRaw) && rmRaw.length > 0
+          ? rmRaw[0] || {}
+          : rmRaw || {}
+
+      const activityName =
+        rm.activity_name ||
+        rm.activity ||
+        (Array.isArray(l.activity_tags) && l.activity_tags.length
+          ? l.activity_tags[0]
+          : '')
+      const category =
+        rm.category || rm.activity_category || rm.main_type || null
+      const activityType =
+        rm.activity_type || rm.activityType || rm.group_type || null
+
+      if (!emotionCounts[emotionName]) emotionCounts[emotionName] = 0
+      emotionCounts[emotionName]++
+
+      if (!emotionDetailMap[emotionName]) {
+        emotionDetailMap[emotionName] = {
+          emotion: emotionName,
+          totalCount: 0,
+          dates: {},
+        }
+      }
+      const detail = emotionDetailMap[emotionName]
+      detail.totalCount++
+      if (date) {
+        if (!detail.dates[date]) {
+          detail.dates[date] = { count: 0, activities: new Set() }
+        }
+        detail.dates[date].count++
+        if (activityName) detail.dates[date].activities.add(activityName)
+      }
+
       const minutes =
         typeof rm.minutes === 'number'
           ? rm.minutes
           : typeof rm.duration_minutes === 'number'
           ? rm.duration_minutes
-          : 30 // 기본값 30분
+          : 30
 
-      byDate[date] = (byDate[date] || 0) + minutes
+      if (date) {
+        byDate[date] = (byDate[date] || 0) + minutes
+      }
+
+      activityDetails.push({
+        date,
+        activity: activityName || '',
+        category,
+        activityType,
+        comment: l.log_content || '',
+        emotion: l.emotion_tag || null,
+      })
     })
+
+    const emotionDistribution = Object.entries(emotionCounts)
+      .map(([name, count]) => ({
+        name,
+        count,
+        value:
+          recordCount > 0
+            ? Math.round((count / recordCount) * 100)
+            : 0,
+      }))
+      .sort((a, b) => b.count - a.count)
+
+    const emotionDetails = Object.values(emotionDetailMap)
+      .map(detail => ({
+        emotion: detail.emotion,
+        totalCount: detail.totalCount,
+        items: Object.entries(detail.dates)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([date, info]) => ({
+            date,
+            count: info.count,
+            activities: Array.from(info.activities),
+          })),
+      }))
+      .sort((a, b) => b.totalCount - a.totalCount)
 
     const activitySeries = Object.entries(byDate)
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([date, minutes]) => ({ date, minutes }))
 
-    // ---- 평균 점수 (related_metrics.score 기준) ----
-    let sumScore = 0
-    let scoreCount = 0
-    logs.forEach(l => {
-      const rm = l.related_metrics || {}
-      const s =
-        typeof rm.score === 'number'
-          ? rm.score
-          : typeof rm.level_score === 'number'
-          ? rm.level_score
-          : null
-      if (typeof s === 'number') {
-        sumScore += s
-        scoreCount++
-      }
-    })
-
-    const averageScore =
-      scoreCount > 0 ? Math.round(sumScore / scoreCount) : 0
-
     const metrics = {
       recordCount,
-      positivePercent,
-      averageScore,
     }
 
-    // 활동별 능력 리스트 (지금은 아직 정의 안 되어 있으므로 빈 배열)
     const activityAbilityList = []
 
     return res.json({
       metrics,
       emotionDistribution,
+      emotionDetails,
       activitySeries,
       activityAbilityList,
+      activityDetails,
     })
   } catch (e) {
     console.error('GET /api/dashboard 에러:', e)
@@ -1142,173 +1392,6 @@ app.get('/api/dashboard', async (req, res) => {
       .json({ message: 'Dashboard Error', error: e.toString() })
   }
 })
-
-// -------------------- 리포트 실행 이력 API (/api/report-runs, /report-runs) --------------------
-// (Report.jsx 에서 사용)
-
-// 목록 조회: GET /report-runs 또는 /api/report-runs
-app.get(['/report-runs', '/api/report-runs'], async (req, res) => {
-  const { limit = 50, offset = 0 } = req.query
-
-  try {
-    const { data, error, count } = await supabase
-      .from('report_runs')
-      .select('*', { count: 'exact' })
-      .order('created_at', { ascending: false })
-      .range(Number(offset), Number(offset) + Number(limit) - 1)
-
-    if (error) {
-      console.error('report_runs 목록 조회 에러:', error)
-      return res.status(500).json({ message: 'DB Error', error })
-    }
-
-    // ⚠️ Report.jsx 가 data.runs 를 우선 사용하므로 여기에 맞춰줌
-    res.json({
-      runs: data || [],
-      count,
-    })
-  } catch (e) {
-    console.error('GET /report-runs 에러:', e)
-    res
-      .status(500)
-      .json({ message: 'Report runs Error', error: e.toString() })
-  }
-})
-
-// 단건 조회: GET /report-runs/:id 또는 /api/report-runs/:id
-app.get(['/report-runs/:id', '/api/report-runs/:id'], async (req, res) => {
-  const { id } = req.params
-
-  try {
-    const { data, error } = await supabase
-      .from('report_runs')
-      .select('*')
-      .eq('id', id)
-      .single()
-
-    if (error || !data) {
-      console.error('report_runs 상세 조회 에러:', error)
-      return res
-        .status(404)
-        .json({ message: '리포트를 찾을 수 없습니다.', error })
-    }
-
-    res.json(data)
-  } catch (e) {
-    console.error('GET /report-runs/:id 에러:', e)
-    res
-      .status(500)
-      .json({ message: 'Report runs Error', error: e.toString() })
-  }
-})
-
-// 생성: POST /report-runs 또는 /api/report-runs
-app.post(['/report-runs', '/api/report-runs'], async (req, res) => {
-  const { title, description, filters } = req.body || {}
-
-  if (!title) {
-    return res.status(400).json({ message: 'title 은 필수입니다.' })
-  }
-
-  try {
-    const now = new Date().toISOString()
-    const payload = {
-      title,
-      description: description || null,
-      filters: filters || {},
-      status: 'queued',
-      created_at: now,
-      updated_at: now,
-    }
-
-    const { data, error } = await supabase
-      .from('report_runs')
-      .insert([payload])
-      .select()
-      .single()
-
-    if (error) {
-      console.error('report_runs insert 에러:', error)
-      return res.status(500).json({ message: 'DB Error', error })
-    }
-
-    res.status(201).json(data)
-  } catch (e) {
-    console.error('POST /report-runs 에러:', e)
-    res
-      .status(500)
-      .json({ message: 'Report create Error', error: e.toString() })
-  }
-})
-
-// 삭제: DELETE /report-runs/:id 또는 /api/report-runs/:id
-// (Report.jsx handleDelete 에서 사용)
-app.delete(
-  ['/report-runs/:id', '/api/report-runs/:id'],
-  async (req, res) => {
-    const { id } = req.params
-
-    try {
-      const { error } = await supabase
-        .from('report_runs')
-        .delete()
-        .eq('id', id)
-
-      if (error) {
-        console.error('report_runs 삭제 에러:', error)
-        return res.status(500).json({ message: 'DB Error', error })
-      }
-
-      res.status(204).send()
-    } catch (e) {
-      console.error('DELETE /report-runs/:id 에러:', e)
-      res
-        .status(500)
-        .json({ message: 'Report delete Error', error: e.toString() })
-    }
-  },
-)
-
-// 다운로드: GET /report-runs/:id/download 또는 /api/report-runs/:id/download
-app.get(
-  ['/report-runs/:id/download', '/api/report-runs/:id/download'],
-  async (req, res) => {
-    const { id } = req.params
-
-    try {
-      const { data, error } = await supabase
-        .from('report_runs')
-        .select('*')
-        .eq('id', id)
-        .single()
-
-      if (error || !data) {
-        console.error('report_runs 다운로드 조회 에러:', error)
-        return res
-          .status(404)
-          .json({ message: '리포트를 찾을 수 없습니다.', error })
-      }
-
-      // 지금은 CSV로 간단히 응답 (나중에 진짜 PDF로 교체 가능)
-      const csvContent = [
-        'title,created_at,status',
-        `"${data.title}",${data.created_at},${data.status}`,
-      ].join('\n')
-
-      res.setHeader('Content-Type', 'text/csv; charset=utf-8')
-      res.setHeader(
-        'Content-Disposition',
-        `attachment; filename="report-${id}.csv"`,
-      )
-      res.send(csvContent)
-    } catch (e) {
-      console.error('GET /report-runs/:id/download 에러:', e)
-      res
-        .status(500)
-        .json({ message: 'Report download error', error: e.toString() })
-    }
-  },
-)
 
 // -------------------- 대시보드 Gemini 채팅 API (/api/dashboard/chat) --------------------
 app.post('/api/dashboard/chat', async (req, res) => {
@@ -1328,13 +1411,12 @@ app.post('/api/dashboard/chat', async (req, res) => {
   }
 
   try {
-    // 1) 선택된 학생/기간의 로그를 Supabase에서 조회
     let logs = []
     if (studentId && startDate && endDate && typeof supabase !== 'undefined') {
       let query = supabase
         .from('log_entries')
         .select(
-          'log_date, emotion_tag, related_metrics, activity_tags, notes, created_at',
+          'log_date, emotion_tag, related_metrics, activity_tags, log_content, created_at',
         )
         .eq('student_id', studentId)
         .gte('log_date', startDate)
@@ -1349,25 +1431,18 @@ app.post('/api/dashboard/chat', async (req, res) => {
       }
     }
 
-    // 2) 간단한 통계/요약 만들기
     const recordCount = logs.length
-    let pos = 0
-    let neg = 0
-    let neu = 0
     const emotionSamples = []
 
     logs.forEach((l, idx) => {
       const tag = (l.emotion_tag || '').toString()
 
-      if (!tag) {
-        neu++
-      } else if (/(기쁨|행복|만족|즐거움|긍정|편안)/.test(tag)) {
-        pos++
-      } else if (/(불안|걱정|우울|슬픔|화|짜증|분노|부정)/.test(tag)) {
-        neg++
-      } else {
-        neu++
-      }
+      // 🔸 배열/객체 모두 지원
+      const rmRaw = l.related_metrics
+      const rm =
+        Array.isArray(rmRaw) && rmRaw.length > 0
+          ? rmRaw[0] || {}
+          : rmRaw || {}
 
       if (idx < 10) {
         emotionSamples.push({
@@ -1376,17 +1451,11 @@ app.post('/api/dashboard/chat', async (req, res) => {
             (l.created_at ? String(l.created_at).slice(0, 10) : null),
           emotion_tag: tag,
           activity_tags: l.activity_tags || null,
-          score:
-            (l.related_metrics && l.related_metrics.score) ??
-            (l.related_metrics && l.related_metrics.level_score) ??
-            null,
-          notes: l.notes || null,
+          score: rm.score ?? rm.level_score ?? null,
+          log_content: l.log_content || null,
         })
       }
     })
-
-    const positivePercent =
-      recordCount > 0 ? Math.round((pos / recordCount) * 100) : 0
 
     const historyText = (history || [])
       .map(h => `${h.role === 'user' ? '교사' : 'AI'}: ${h.content}`)
@@ -1397,8 +1466,6 @@ app.post('/api/dashboard/chat', async (req, res) => {
       studentName,
       period: { startDate, endDate },
       recordCount,
-      emotionCounts: { positive: pos, negative: neg, neutral: neu },
-      positivePercent,
       emotionSamples,
     }
 
@@ -1431,19 +1498,16 @@ ${historyText || '(이전 대화 없음)'}
 
     if (!process.env.GEMINI_API_KEY) {
       console.error('GEMINI_API_KEY가 설정되어 있지 않습니다.')
-      // 프론트가 상황을 이해할 수 있도록 200으로 안내 메시지 반환
       return res.json({
         answer:
           '현재 서버에 Gemini API 키(GEMINI_API_KEY)가 설정되어 있지 않아 실제 AI 응답을 생성할 수 없습니다. 백엔드 .env 또는 Render 환경 변수에서 GEMINI_API_KEY를 설정한 뒤 다시 시도해 주세요.',
       })
     }
 
-    // ✅ pro 대신 flash 모델 사용 (무료/권한 문제 줄이기)
     const geminiUrl =
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent' +
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent' +
       `?key=${process.env.GEMINI_API_KEY}`
 
-    // 한 개의 content 안에 system + user 프롬프트를 같이 넣기
     const body = {
       contents: [
         {
@@ -1468,7 +1532,6 @@ ${historyText || '(이전 대화 없음)'}
         text,
       )
 
-      // 프론트에서 에러 내용을 볼 수 있게 detail도 같이 전달
       return res.status(500).json({
         message: 'Gemini API Error',
         detail: text,
@@ -1497,165 +1560,140 @@ ${historyText || '(이전 대화 없음)'}
   }
 })
 
-
-// -------------------- 리포트 API (/report-runs, /api/report-runs) --------------------
-
-/**
- * GET /report-runs, /api/report-runs
- * - 리포트 실행 이력 목록 조회
- * - 쿼리: from, to, on, category, student_id, purpose, limit, offset
- * - 응답: { runs: [...], count: number }
- */
-app.get(['/report-runs', '/api/report-runs'], async (req, res) => {
-  try {
-    const {
-      from,
-      to,
-      on,
-      category,
-      student_id,
-      purpose,
-      limit = 50,
-      offset = 0,
-    } = req.query
-
-    // 기본 쿼리: report_templates, report_outputs 조인
-    let query = supabase
-      .from('report_runs')
-      .select(
-        `
-        id,
-        template_id,
-        params,
-        status,
-        error,
-        created_at,
-        updated_at,
-        template:report_templates (
-          id,
-          code,
-          name,
-          format,
-          config
-        ),
-        outputs:report_outputs (
-          id,
-          kind,
-          storage_key,
-          created_at
-        )
-      `,
-        { count: 'exact' },
-      )
-      .order('created_at', { ascending: false })
-      .range(Number(offset), Number(offset) + Number(limit) - 1)
-
-    // 1) 날짜 필터: created_at 기준
-    if (from) {
-      query = query.gte('created_at', from)
-    }
-    if (to) {
-      // 종료일 포함되도록 to+1일 00:00 전까지
-      const d = new Date(to)
-      if (!Number.isNaN(d.getTime())) {
-        d.setDate(d.getDate() + 1)
-        query = query.lt('created_at', d.toISOString())
-      }
-    }
-    if (on) {
-      const start = new Date(on)
-      if (!Number.isNaN(start.getTime())) {
-        const end = new Date(start)
-        end.setDate(end.getDate() + 1)
-        query = query
-          .gte('created_at', start.toISOString())
-          .lt('created_at', end.toISOString())
-      }
-    }
-
-    // 2) params(jsonb) 기반 필터 (category, student_id, purpose)
-    const paramsFilter = {}
-    if (category && category !== 'all') paramsFilter.category = category
-    if (student_id && student_id !== 'all') paramsFilter.student_id = student_id
-    if (purpose && purpose !== 'all') paramsFilter.purpose = purpose
-
-    if (Object.keys(paramsFilter).length > 0) {
-      query = query.contains('params', paramsFilter)
-    }
-
-    const { data, error, count } = await query
-
-    if (error) {
-      console.error('report_runs 목록 조회 에러:', error)
-      return res
-        .status(500)
-        .json({ message: 'DB Error', detail: error.message || String(error) })
-    }
-
-    return res.json({
-      runs: data || [],
-      count: count ?? (data ? data.length : 0),
-    })
-  } catch (e) {
-    console.error('GET /report-runs 예외:', e)
-    return res
-      .status(500)
-      .json({ message: 'Server Error', detail: e.toString() })
-  }
-})
-
 /**
  * POST /report-runs, /api/report-runs
- * - 새 리포트 실행 이력 생성
- * - body 예시:
- *   {
- *     "template_code": "parent_summary",  // 또는 template_id 직접 전달
- *     "params": {
- *       "from": "2025-11-01",
- *       "to": "2025-11-30",
- *       "category": "emotion",
- *       "student_id": "학생UUID",
- *       "purpose": "parent"
- *     },
- *     "requested_by": "요청자 user uuid (옵션)"
- *   }
+ * - AI 리포트 요청 (Report.jsx 에서 호출)
  */
 app.post(['/report-runs', '/api/report-runs'], async (req, res) => {
   try {
-    const { template_code, template_id, params, requested_by } = req.body || {}
+    // -------------------------------
+    // 1) body 구조 파싱 (중첩 body 방어)
+    // -------------------------------
+    const raw = req.body || {}
 
+    // 만약 { body: { ... } } 형태로 들어오면 안쪽 body 객체를 payload 로 사용
+    const root =
+      raw &&
+      typeof raw === 'object' &&
+      raw.body &&
+      typeof raw.body === 'object' &&
+      !Array.isArray(raw.body)
+        ? raw.body
+        : raw
+
+    // 여기부터는 순수 root 가 "실제 요청 JSON" 이라고 가정
+    const { template_code, template_id, requested_by } = root
+
+    // 1차로 params 를 꺼낸다
+    let incomingParams = root.params
+
+    // 혹시 만약 params 가 문자열(JSON 문자열)로 넘어오면 파싱
+    if (typeof incomingParams === 'string') {
+      try {
+        incomingParams = JSON.parse(incomingParams)
+      } catch (e) {
+        console.warn('POST /report-runs: params JSON 파싱 실패, 원본 문자열 그대로 사용합니다.', e)
+      }
+    }
+
+    // -------------------------------
+    // 2) params 만들기
+    // -------------------------------
+    let finalParams = null
+
+    // (1) 정상적으로 params 객체가 온 경우 그대로 사용
+    if (
+      incomingParams &&
+      typeof incomingParams === 'object' &&
+      !Array.isArray(incomingParams)
+    ) {
+      finalParams = { ...incomingParams }
+    } else {
+      // (2) params 가 없거나 문자열/배열 등 비정상 형태면
+      //     template_code / template_id / requested_by / params 를 제외한
+      //     나머지 필드를 모두 params 로 넣어 준다
+      const fallback = {}
+
+      Object.keys(root).forEach(key => {
+        if (
+          key === 'template_code' ||
+          key === 'template_id' ||
+          key === 'requested_by' ||
+          key === 'params'
+        ) {
+          return
+        }
+        fallback[key] = root[key]
+      })
+
+      finalParams = Object.keys(fallback).length > 0 ? fallback : {}
+    }
+
+    // 혹시 최상단에 markdown 필드로 들어온 경우에도 params 에 보장
+    if (!finalParams.markdown && typeof root.markdown === 'string') {
+      finalParams.markdown = root.markdown
+    }
+
+    // params 가 결국이라도 falsy 하면 비어있는 객체라도 넣어준다
+    if (!finalParams) finalParams = {}
+
+    // -------------------------------
+    // 3) 사용할 템플릿 결정 (template_id / template_code)
+    // -------------------------------
+    const codeToUse = template_code || 'default_md'
     let tplId = template_id || null
 
-    // 1) template_id가 없으면 template_code로 report_templates 조회
+    // template_id 가 없으면 code 기반으로 템플릿 조회
     if (!tplId) {
-      if (!template_code) {
-        return res
-          .status(400)
-          .json({ message: 'template_code 또는 template_id가 필요합니다.' })
-      }
-
       const { data: tpl, error: tplErr } = await supabase
         .from('report_templates')
         .select('id, code, name, format, config')
-        .eq('code', template_code)
+        .eq('code', codeToUse)
         .single()
 
-      if (tplErr || !tpl) {
-        console.error('report_templates 조회 에러:', tplErr)
-        return res.status(400).json({
-          message:
-            '해당 코드의 리포트 템플릿을 찾을 수 없습니다. (report_templates.code 확인 필요)',
-        })
+      if (!tplErr && tpl) {
+        tplId = tpl.id
       }
-
-      tplId = tpl.id
     }
 
+    // 그래도 템플릿이 없으면 기본 템플릿 생성 (md 포맷)
+    if (!tplId) {
+      const { data: createdTpl, error: createErr } = await supabase
+        .from('report_templates')
+        .insert([
+          {
+            code: codeToUse,
+            name:
+              codeToUse === 'ai_markdown'
+                ? 'AI 마크다운 리포트'
+                : '기본 리포트 템플릿',
+            format: 'md',
+            config: null,
+          },
+        ])
+        .select('id')
+        .single()
+
+      if (createErr || !createdTpl) {
+        console.error('report_templates insert 에러:', createErr)
+        return res
+          .status(500)
+          .json({
+            message: '리포트 템플릿 생성 중 오류가 발생했습니다.',
+            error: createErr,
+          })
+      }
+      tplId = createdTpl.id
+    }
+
+    // -------------------------------
+    // 4) report_runs 에 실제로 저장될 payload
+    // -------------------------------
     const payload = {
-      template_id: tplId,
-      params: params || {},
-      requested_by: requested_by || null, // 지금은 별도 인증 안 쓰므로 옵션
-      // status, created_at, updated_at 은 DB default 사용 (queued)
+      template_id: tplId, // NOT NULL
+      params: finalParams, // jsonb NOT NULL
+      requested_by: requested_by || null,
+      status: 'completed', // 새 AI 리포트는 바로 completed 상태로
     }
 
     const { data, error } = await supabase
@@ -1665,6 +1703,7 @@ app.post(['/report-runs', '/api/report-runs'], async (req, res) => {
         `
         id,
         template_id,
+        requested_by,
         params,
         status,
         error,
@@ -1676,12 +1715,6 @@ app.post(['/report-runs', '/api/report-runs'], async (req, res) => {
           name,
           format,
           config
-        ),
-        outputs:report_outputs (
-          id,
-          kind,
-          storage_key,
-          created_at
         )
       `,
       )
@@ -1704,12 +1737,10 @@ app.post(['/report-runs', '/api/report-runs'], async (req, res) => {
 })
 
 /**
- * GET /report-runs/:id, /api/report-runs/:id
- * - 단일 리포트 실행 이력 조회 (상세 보기용)
+ * GET /report-runs, /api/report-runs
+ * - 리포트 실행 목록 조회
  */
-app.get(['/report-runs/:id', '/api/report-runs/:id'], async (req, res) => {
-  const { id } = req.params
-
+app.get(['/report-runs', '/api/report-runs'], async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('report_runs')
@@ -1717,6 +1748,7 @@ app.get(['/report-runs/:id', '/api/report-runs/:id'], async (req, res) => {
         `
         id,
         template_id,
+        requested_by,
         params,
         status,
         error,
@@ -1728,12 +1760,51 @@ app.get(['/report-runs/:id', '/api/report-runs/:id'], async (req, res) => {
           name,
           format,
           config
-        ),
-        outputs:report_outputs (
+        )
+      `,
+      )
+
+    if (error) {
+      console.error('report_runs 목록 조회 에러:', error)
+      return res
+        .status(500)
+        .json({ message: 'DB Error', detail: error.message || String(error) })
+    }
+
+    return res.json(data || [])
+  } catch (e) {
+    console.error('GET /report-runs 예외:', e)
+    return res
+      .status(500)
+      .json({ message: 'Server Error', detail: e.toString() })
+  }
+})
+
+/**
+ * GET /report-runs/:id, /api/report-runs/:id
+ */
+app.get(['/report-runs/:id', '/api/report-runs/:id'], async (req, res) => {
+  const { id } = req.params
+
+  try {
+    const { data, error } = await supabase
+      .from('report_runs')
+      .select(
+        `
+        id,
+        template_id,
+        requested_by,
+        params,
+        status,
+        error,
+        created_at,
+        updated_at,
+        template:report_templates (
           id,
-          kind,
-          storage_key,
-          created_at
+          code,
+          name,
+          format,
+          config
         )
       `,
       )
@@ -1755,8 +1826,67 @@ app.get(['/report-runs/:id', '/api/report-runs/:id'], async (req, res) => {
 })
 
 /**
+ * GET /report-runs/:id/download, /api/report-runs/:id/download
+ * - params.markdown 에 저장된 내용을 md 파일로 내려줌
+ */
+app.get(
+  ['/report-runs/:id/download', '/api/report-runs/:id/download'],
+  async (req, res) => {
+    const { id } = req.params
+    const format = req.query.format || 'md'
+
+    try {
+      const { data, error } = await supabase
+        .from('report_runs')
+        .select('params, created_at')
+        .eq('id', id)
+        .single()
+
+      if (error || !data) {
+        console.error('report_runs 다운로드 조회 에러:', error)
+        return res
+          .status(404)
+          .json({ message: '리포트를 찾을 수 없습니다.', error })
+      }
+
+      const params = data.params || {}
+      if (format !== 'md') {
+        return res
+          .status(400)
+          .json({ message: '현재는 format=md (마크다운)만 지원합니다.' })
+      }
+
+      const markdown =
+        params.markdown || params.content || params.body || null
+
+      if (!markdown) {
+        return res.status(404).json({
+          message:
+            '이 리포트에는 markdown 내용이 없습니다. params.markdown을 확인해 주세요.',
+        })
+      }
+
+      const title =
+        params.title || params.report_title || 'AI-리포트'
+
+      res.setHeader('Content-Type', 'text/markdown; charset=utf-8')
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${title}.md"`,
+      )
+      return res.send(markdown)
+    } catch (e) {
+      console.error('GET /report-runs/:id/download 예외:', e)
+      return res.status(500).json({
+        message: '다운로드 처리 중 서버 오류가 발생했습니다.',
+        detail: e.toString(),
+      })
+    }
+  },
+)
+
+/**
  * DELETE /report-runs/:id, /api/report-runs/:id
- * - 리포트 및 연결된 출력(report_outputs) 함께 삭제
  */
 app.delete(
   ['/report-runs/:id', '/api/report-runs/:id'],
@@ -1764,7 +1894,6 @@ app.delete(
     const { id } = req.params
 
     try {
-      // 1) 출력물 먼저 삭제 (FK 제약 때문에)
       const { error: outErr } = await supabase
         .from('report_outputs')
         .delete()
@@ -1772,10 +1901,8 @@ app.delete(
 
       if (outErr) {
         console.error('report_outputs 삭제 에러:', outErr)
-        // 치명적이면 return 해도 되지만, 일단 로그만 남기고 진행
       }
 
-      // 2) run 삭제
       const { error } = await supabase
         .from('report_runs')
         .delete()
@@ -1794,49 +1921,6 @@ app.delete(
       return res
         .status(500)
         .json({ message: 'Server Error', detail: e.toString() })
-    }
-  },
-)
-
-/**
- * GET /report-runs/:id/download, /api/report-runs/:id/download
- * - 프론트에서 사용하는 "다운로드" 엔드포인트용 기본 틀
- * - 아직 Supabase Storage 연동은 안 했고, 파일이 없으면 404 응답.
- */
-app.get(
-  ['/report-runs/:id/download', '/api/report-runs/:id/download'],
-  async (req, res) => {
-    const { id } = req.params
-    const format = req.query.format || 'pdf'
-
-    try {
-      const { data, error } = await supabase
-        .from('report_outputs')
-        .select('id, kind, storage_key, created_at')
-        .eq('run_id', id)
-        .eq('kind', format)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single()
-
-      if (error || !data) {
-        console.error('report_outputs 조회 에러:', error)
-        return res
-          .status(404)
-          .send('출력 파일을 찾을 수 없습니다. (report_outputs 확인 필요)')
-      }
-
-      // TODO: Supabase Storage에서 실제 파일을 읽어서 스트리밍하거나,
-      //       public URL로 redirect 하는 로직을 여기에 추가하면 됨.
-      // 지금은 엔드포인트만 살아있도록 501 응답.
-      return res
-        .status(501)
-        .send('파일 다운로드는 아직 구현되지 않았습니다.')
-    } catch (e) {
-      console.error('GET /report-runs/:id/download 예외:', e)
-      return res
-        .status(500)
-        .send('다운로드 처리 중 서버 오류가 발생했습니다.')
     }
   },
 )
