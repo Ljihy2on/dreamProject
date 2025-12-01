@@ -1,42 +1,463 @@
-#root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
+/* src/App.css */
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+
+:root {
+  --bg-blue: #D6EBF2;   /* 메인 배경색 */
+  --bg-white: #ffffff;  /* 패널 배경색 */
+  --text-dark: #1F2937;
+  --text-gray: #6B7280;
+  --accent-orange: #FF6B6B;
+  --accent-purple: #7C3AED;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: 'Pretendard', sans-serif;
+  background-color: var(--bg-blue);
+  color: var(--text-dark);
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* --- 전체 레이아웃 --- */
+.app-container {
+  display: flex;
+  width: 100vw;
+  height: 100vh;
+  padding: 20px;
+  gap: 20px;
+  background-color: #FFCB0050;
+}
+
+/* 1. 왼쪽 사이드바 */
+.sidebar {
+  width: 240px;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  padding: 20px 10px;
+  border-radius: 30px;
+}
+
+.brand-logo {
+  font-size: 24px;
+  font-weight: 800;
+  margin-bottom: 40px;
+  padding-left: 15px;
+  color: #111;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.user-profile-mini {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 30px;
+}
+
+.avatar-circle {
+  width: 70px;
+  height: 70px;
+  background-color: white;
+  border-radius: 50%;        
+  display: flex;
+  align-items: center;       
+  justify-content: center;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+  margin-bottom: 10px;
+  overflow: hidden;         
+}
+
+.user-avatar-img {
+  width: 85%;
+  height: 85%;
+  object-fit: contain;
+  border-radius: 0;         
+  background: transparent;  
+  padding: 0;               
+  box-shadow: none;        
+  margin: 0;
+}
+
+.nav-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.nav-item {
+  padding: 12px 20px;
+  border-radius: 12px;
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text-gray);
+  transition: 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.nav-item:hover, .nav-item.active {
+  background-color: #F27904;
+  color: #fff;
+}
+
+/* 2. 메인 콘텐츠 영역 */
+.page-wrapper {
+  flex: 1;
+  background: #80A32530;
+  border-radius: 30px;
+  overflow: hidden;
+  box-shadow: -5px 5px 20px rgba(0,0,0,0.05);
+  display: flex; 
+}
+
+/* 대시보드 내부 레이아웃 */
+.dashboard-layout {
+  display: flex;
+  width: 100%;
+  height: 100%;
+}
+
+.dashboard-center {
+  flex: 1;
+  padding: 40px;
+  overflow-y: auto;
+}
+
+.dashboard-right {
+  width: 400px;
+  background-color: var(--bg-white);
+  border-top-left-radius: 40px;
+  border-bottom-left-radius: 40px;
+  padding: 30px;
+  display: flex;
+  flex-direction: column;
+  gap: 25px;
+  overflow-y: auto;
+}
+
+/* 공통 UI 요소 */
+.welcome-title {
+  font-size: 36px;
+  font-weight: 800;
+  line-height: 1.2;
+  margin-bottom: 20px;
+}
+
+.orange-btn {
+  background-color: #80A325;
+  color: white;
+  border: none;
+  padding: 12px 24px;
+  border-radius: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 5px 15px rgba(255, 107, 107, 0.4);
+}
+
+.section-title {
+  margin-top: 30px;
+  font-weight: 700;
+  font-size: 18px;
+  margin-bottom: 15px;
+}
+
+/* 카드 그리드 */
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: 15px;
+}
+
+.schedule-card {
+  display: flex;
+  align-items: center;
+  margin-bottom: 12px;
+  background: rgba(255,255,255,0.6);
+  padding: 12px;
+  border-radius: 15px;
+}
+.date-circle {
+  background: white;
+  min-width: 45px;
+  height: 45px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  margin-right: 15px;
+  color: var(--accent-purple);
+}
+
+.widget-card {
+  background: white;
+  border-radius: 20px;
+  padding: 20px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.03);
   text-align: center;
 }
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
+.upgrade-card {
+  background: linear-gradient(135deg, #FF9A9E 0%, #FECFEF 100%);
+  color: white;
+  border-radius: 20px;
+  padding: 25px;
+  cursor: pointer;
 }
 
-@keyframes logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+/* 검색바 및 입력창 */
+.search-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 20px;
+  background: rgba(255,255,255,0.5);
+  padding: 10px 15px;
+  border-radius: 12px;
+}
+input[type="date"], select {
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid #ddd;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
-  }
+/* 모달 스타일 코드 */
+.modal-backdrop {
+  position: fixed; top:0; left:0; width:100%; height:100%;
+  background: rgba(0,0,0,0.5);
+  display:flex; align-items:center; justify-content:center;
+  z-index: 1000;
+}
+.modal-card {
+  background: white; padding: 25px; border-radius: 20px;
+  max-width: 500px; width: 90%; position: relative;
+}
+.modal-close {
+  position: absolute; top: 15px; right: 15px;
+  background: none; border: none; font-size: 20px; cursor: pointer;
 }
 
-.card {
-  padding: 2em;
+/* 페이지 전체 여백과 스크롤 설정 */
+.page-container {
+  width: 100%;
+  height: 100%;
+  padding: 40px;      
+  overflow-y: auto;   /* 내용이 길어지면 스크롤 생기게 함 */
 }
 
-.read-the-docs {
+/* 제목 글자가 잘리지 않게 줄 간격 확보 */
+.page-title {
+  font-size: 32px;
+  font-weight: 800;
+  margin-top: 0;
+  margin-bottom: 10px;
+
+  /* 핵심: 글자 위아래 공간 확보 (잘림 방지) */
+  line-height: 1.4;   
+  color: #111;
+}
+
+.page-subtitle {
+  font-size: 16px;
+  color: #555;
+  margin-bottom: 30px;
+}
+
+/*  업로드 페이지 스타일 */
+.upload-layout {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  gap: 30px;
+  padding: 20px; 
+}
+
+/* 왼쪽: 파일 올리는 드롭존 */
+.upload-left-panel {
+  flex: 1; /* 남은 공간 다 차지 */
+  background: white;
+  border-radius: 30px;
+  border: 3px dashed #d1d5db; /* 회색 점선 테두리 */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+  cursor: pointer;
+  min-height: 500px; /* 최소 높이 확보 */
+}
+
+.upload-left-panel:hover, .upload-left-panel.active {
+  /* 마우스 올리면 보라색 점선 */
+  border-color: var(--accent-purple); 
+  /* 아주 연한 보라색 배경 */
+  background-color: #F8F7FF;   
+  /* 살짝 눌리는 효과 */       
+  transform: scale(0.99);             
+}
+
+.upload-icon-large {
+  font-size: 64px;
+  margin-bottom: 20px;
+  opacity: 0.8;
+}
+
+.upload-guide-text {
+  font-size: 20px;
+  font-weight: 700;
+  color: #333;
+  margin-bottom: 10px;
+}
+
+.upload-sub-text {
+  font-size: 14px;
   color: #888;
+}
+
+/* 오른쪽: 업로드 목록 패널 */
+.upload-right-panel {
+  width: 380px;
+  background: white;
+  border-radius: 30px;
+  padding: 30px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.05);
+  display: flex;
+  flex-direction: column;
+}
+
+/* 파일 리스트 아이템 */
+.file-item {
+  display: flex;
+  align-items: center;
+  padding: 15px;
+  background: #f9fafb;
+  border-radius: 12px;
+  margin-bottom: 10px;
+}
+.file-icon-box {
+  width: 40px; height: 40px;
+  background: white;
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  margin-right: 12px;
+  font-size: 20px;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+}
+
+/* 업로드 페이지 레이아웃 */
+.upload-layout {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  gap: 30px;
+  padding: 10px;
+}
+
+/* 왼쪽: 파일 업로드 드롭존 */
+.upload-left-panel {
+  flex: 1;
+  background: white;
+  border-radius: 30px;
+  border: 3px dashed #d1d5db;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+  cursor: pointer;
+  min-height: 500px;
+  position: relative;
+}
+
+.upload-left-panel:hover, .upload-left-panel.active {
+  border-color: #7C3AED; /* 보라색 포인트 */
+  background-color: #F8F7FF;
+  transform: scale(0.995);
+}
+
+.upload-icon-large {
+  font-size: 64px;
+  margin-bottom: 20px;
+  opacity: 0.8;
+}
+
+.upload-guide-text {
+  font-size: 20px;
+  font-weight: 700;
+  color: #333;
+  margin-bottom: 10px;
+}
+
+.upload-sub-text {
+  font-size: 14px;
+  color: #888;
+}
+
+/* 오른쪽: 업로드 목록 패널 */
+.upload-right-panel {
+  width: 400px;
+  background: white;
+  border-radius: 30px;
+  padding: 30px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.05);
+  display: flex;
+  flex-direction: column;
+}
+
+/* 파일 리스트 아이템 스타일 */
+.file-item {
+  display: flex;
+  align-items: center;
+  padding: 15px;
+  background: #f9fafb;
+  border-radius: 12px;
+  margin-bottom: 10px;
+  transition: 0.2s;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.file-item:hover {
+  background: #f0f2f5;
+  border-color: #e5e7eb;
+}
+
+.file-icon-box {
+  width: 40px; height: 40px;
+  background: white;
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  margin-right: 12px;
+  font-size: 20px;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+}
+
+.file-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.file-name {
+  font-weight: 600;
+  font-size: 14px;
+  color: #333;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-meta {
+  font-size: 12px;
+  color: #888;
+  margin-top: 2px;
+}
+
+.file-status-icon {
+  font-size: 18px;
+  margin-left: 10px;
 }

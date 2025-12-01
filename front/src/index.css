@@ -755,7 +755,8 @@ button:focus-visible {
 }
 
 .nav-tab.active {
-  background: var(--bg-nav-active);
+  background: #FAB710;
+  color: #000000;
   color: var(--bg-white);
 }
 
@@ -1091,6 +1092,7 @@ button:focus-visible {
 }
 
 .metric-number {
+  color: #F27904 !important;
   font-size: 20px;
   font-weight: 600;
 }
@@ -2827,8 +2829,8 @@ button {
 }
 
 button:hover {
-  border-color: #e1134f;
-  background-color: #e1134f;
+  border-color: #607A1C;
+  background-color: #607A1C;
 }
 
 @media (prefers-color-scheme: light) {
@@ -2862,13 +2864,13 @@ button:hover {
 
 /* TopNav 활성 탭 */
 .nav-tab.active {
-  background: var(--primary);
+  background-color: #80A325;
   color: var(--bg-white);
 }
 
 /* 학생 아바타 & 지표 색상 */
 .student-avatar {
-  background: var(--primary);
+  background-color: #F27904;
 }
 
 .metric-blue {

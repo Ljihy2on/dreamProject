@@ -1,6 +1,7 @@
 // src/components/TopNav.jsx
 import React, { useEffect, useState, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import logoImg from '../assets/logo.png'
 
 function NavTab({ to, icon, label, isActive }) {
   const navigate = useNavigate()
@@ -221,8 +222,17 @@ export default function TopNav() {
             onKeyDown={e => {
               if (e.key === 'Enter' || e.key === ' ') navigate('/upload')
             }}
+            style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              cursor: 'pointer',
+              gap: '8px' }} 
           >
-            꿈이자라는뜰
+            <img 
+              src={logoImg} 
+              alt="로고" 
+              style={{ height: '60px', objectFit: 'contain' }} 
+            />
           </div>
         </div>
 
@@ -239,10 +249,27 @@ export default function TopNav() {
             aria-label="내 계정"
             type="button"
             onClick={() => setIsMenuOpen(prev => !prev)}
+            style={{ 
+              width: '45px',  
+              height: '45px',
+              outline: 'none',          // 클릭했을 때 생기는 굵은 검은 테두리 삭제
+              padding: 0,               // 불필요한 여백 삭제
+              cursor: 'pointer',        // 마우스 올리면 손가락 모양
+              display: 'flex',          // 이미지를 가운데 정렬
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
           >
-            <span role="img" aria-hidden="true">
-              👤
-            </span>
+            <img 
+              src={logoImg} 
+              alt="프로필 이미지" 
+              style={{ 
+                width: '32px', 
+                height: '32px', 
+                borderRadius: '32%', /* 동그랗게 만들기 (원하지 않으면 빼세요) */
+                objectFit: 'contain' 
+              }} 
+            />
           </button>
         </div>
       </header>

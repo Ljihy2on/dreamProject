@@ -76,7 +76,10 @@ function getRemainingInfo(report, nowTs) {
 function normalizeReportRuns(rawRuns) {
   if (!Array.isArray(rawRuns)) return []
 
-  return rawRuns.map(run => {
+  return rawRuns
+    .filter(run => !!run) // null 제거
+    .map(run => {    
+
     const params = run.params || run.filters || {}
     const template = run.template || {}
     const outputs = Array.isArray(run.outputs) ? run.outputs : []
@@ -103,11 +106,21 @@ function normalizeReportRuns(rawRuns) {
         : null
 
     const createdAt = run.created_at
-    const expiresAt =
-      run.expires_at ??
-      (createdAt
-        ? new Date(new Date(createdAt).getTime() + 7 * 24 * 60 * 60 * 1000).toISOString()
-        : null)
+
+    let expiresAt = null
+     try{ 
+      if (run.expires_at) {
+    expiresAt = run.expires_at
+      } else if (createdAt) {
+        const createdDate = new Date(createdAt)
+        if (!isNaN(createdDate.getTime())) {
+          const expireDate = new Date(createdDate.getTime() + 7 * 24 * 60 * 60 * 1000)
+          expiresAt = expireDate.toISOString()
+        }
+     }
+} catch (err) {
+  expiresAt = null
+}
 
     const firstMd =
       outputs.find(o => o.format === 'md' || o.format === 'markdown') || run.md_output
@@ -201,6 +214,7 @@ export default function Report() {
     setStudentsError(null)
     try {
       const data = await apiFetch('/api/students?limit=1000')
+      console.log("students API response:", data)
       const items = Array.isArray(data?.items) ? data.items : data || []
       setStudents(items)
     } catch (err) {
@@ -487,7 +501,8 @@ export default function Report() {
                     <label>학생</label>
                     <select value={studentId} onChange={e => setStudentId(e.target.value)} className="report-select">
                       <option value="all">전체</option>
-                      {students.map(s => (
+                      {Array.isArray(students) && students.length > 0 &&
+                        students.map(s => (
                         <option key={s.id} value={s.id}>{s.name}</option>
                       ))}
                     </select>
@@ -583,4 +598,3 @@ export default function Report() {
   )
 }
 
-export { Report }
